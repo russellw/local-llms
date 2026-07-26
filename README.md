@@ -1,5 +1,7 @@
 # local-llms
 
+[![selfcheck](https://github.com/russellw/local-llms/actions/workflows/selfcheck.yml/badge.svg)](https://github.com/russellw/local-llms/actions/workflows/selfcheck.yml)
+
 Benchmarking locally-runnable LLMs on coding tasks, on ordinary CPU hardware.
 
 Every model here runs on the machine in front of you: no GPU, no API key, no
@@ -104,6 +106,36 @@ Several tasks defend against the shortcut rather than the wrong answer:
 produce a working algorithm but lose points on the sixth clause of a
 specification — precisely the failure mode that makes a coding assistant
 frustrating in practice.
+
+### What this suite does not measure
+
+Stated plainly, because these are deliberate boundaries rather than oversights:
+
+**Training-data contamination is not eliminated, only made less useful.** An
+LRU cache, a min-heap, a CSV parser and a semver comparator are all classic
+exercises that are certainly in every model's training data. That is survivable
+because the tasks do not score "did you recognise this problem" — they score
+conformance to a specific written spec, and the specs deliberately deviate from
+the textbook version. `merge-intervals` merges intervals that are merely
+*adjacent*, not just overlapping. `rle-codec` writes the count even when it is 1.
+The observed failures match this design: models produce the recognisable general
+shape and then miss a clause. A model that had memorised the answer outright
+would not fail that way. Treat contamination as damped, not absent.
+
+**Sample size is small.** Twelve tasks resolves large differences between
+models and nothing finer. `results/REPORT.md` restates this next to the numbers.
+
+**Scope is single-file Python.** Every task is one self-contained module with a
+clean specification. Real coding work is multi-file, involves existing code you
+did not write, and is iterative — you get a failing test and try again. None of
+that is measured here. A model that scores well on this suite has demonstrated
+that it can write correct Python to a precise spec; it has not demonstrated that
+it can work in your codebase.
+
+**One hardware configuration, one quantisation.** Results are Q4_K_M (or the
+model's native format) on one CPU. Quantisation quality effects and any
+GPU-relevant conclusions are out of scope; the tok/s figures transfer to nothing
+but a machine with similar memory bandwidth.
 
 ### Adding a task
 

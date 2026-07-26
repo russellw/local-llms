@@ -1,0 +1,36 @@
+name: selfcheck
+
+# Validates the benchmark itself: every task's reference solution must pass its
+# own tests, and the harness unit tests must pass. Needs no model, no GPU and no
+# dependencies, so it runs in seconds on a standard runner.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  selfcheck:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Oldest supported and current: the harness is stdlib-only, and staying
+        # compatible with a distro Python is part of the point.
+        python-version: ["3.11", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: List tasks
+        run: python3 -m bench tasks
+
+      - name: Validate tasks and harness
+        run: python3 -m bench selfcheck
+
+      - name: Regenerate report from committed results
+        run: python3 -m bench report

@@ -72,6 +72,45 @@ def _pct(x: float) -> str:
     return f"{100 * x:.0f}%"
 
 
+_METHOD_NOTE = """### Reading these numbers
+
+Sample size: {sample}.
+
+That is small, and the honest reading follows from it. The coarse ordering is
+robust — the gap between the best and worst model here is far larger than the
+noise. **Adjacent gaps are not.** Repeated attempts at the same task are
+correlated, so the effective sample size is closer to the number of *tasks*
+than the number of attempts; a few points between neighbouring models is a tie,
+not a ranking.
+
+Column meanings:
+
+- **pass@1** — mean success rate across all attempts.
+- **pass@any** — fraction of tasks solved by at least one attempt. The gap
+  between this and pass@1 measures consistency.
+- **tok/s** — median generation speed, from llama.cpp's own timings.
+- **runtime** — total wall clock spent generating, across all attempts.
+
+Per-category percentages come from even fewer tasks each (two to four), so read
+them as a direction to investigate rather than a measurement.
+"""
+
+
+def _sample_line(summaries: list[dict]) -> str:
+    """Describe the sample size, collapsing to one phrase when runs agree."""
+    shapes = {(s["n_tasks"], s["n"]) for s in summaries}
+    if len(shapes) == 1:
+        tasks, attempts = shapes.pop()
+        per = attempts // tasks if tasks else 0
+        return (
+            f"{tasks} tasks x {per} attempt(s) per model "
+            f"({attempts} attempts per model)"
+        )
+    return "; ".join(
+        f"{s['model']}: {s['n_tasks']} tasks, {s['n']} attempts" for s in summaries
+    )
+
+
 def render(summaries: list[dict]) -> str:
     summaries = [s for s in summaries if s.get("n")]
     if not summaries:
@@ -103,6 +142,8 @@ def render(summaries: list[dict]) -> str:
     ]
 
     out.append("")
+    out.append(_METHOD_NOTE.format(sample=_sample_line(summaries)))
+
     for s in summaries:
         notes = []
         if s["timeouts"]:
