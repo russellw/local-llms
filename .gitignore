@@ -216,3 +216,14 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# --- local-llms ---
+# GGUF weights: gigabytes, re-fetchable with scripts/fetch-model.sh
+/models/
+# llama.cpp checkout and build tree, rebuilt with scripts/build.sh
+/vendor/
+# Raw model responses: useful locally for diagnosing failures, too bulky to commit.
+# The per-run .jsonl result files ARE committed -- they are the benchmark record.
+/results/responses/
+# llama-server stdout per model: diagnostic noise, regenerated each run
+/results/logs/

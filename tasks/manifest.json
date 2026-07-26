@@ -1,0 +1,68 @@
+{
+  "rle-codec": {
+    "title": "Run-length encode and decode",
+    "category": "algorithm",
+    "difficulty": "easy"
+  },
+  "merge-intervals": {
+    "title": "Merge overlapping intervals",
+    "category": "algorithm",
+    "difficulty": "easy"
+  },
+  "roman-numerals": {
+    "title": "Roman numeral conversion, both directions",
+    "category": "algorithm",
+    "difficulty": "easy"
+  },
+  "binary-search-insert": {
+    "title": "bisect_left / bisect_right from scratch",
+    "category": "algorithm",
+    "difficulty": "medium",
+    "timeout": 60
+  },
+  "topological-sort": {
+    "title": "Deterministic topological sort with cycle detection",
+    "category": "datastruct",
+    "difficulty": "medium"
+  },
+  "autocomplete-trie": {
+    "title": "Weighted prefix autocomplete",
+    "category": "datastruct",
+    "difficulty": "medium",
+    "timeout": 60
+  },
+  "fix-lru-cache": {
+    "title": "Repair a broken LRU cache",
+    "category": "bugfix",
+    "difficulty": "medium"
+  },
+  "fix-min-heap": {
+    "title": "Repair a broken binary min-heap",
+    "category": "bugfix",
+    "difficulty": "medium"
+  },
+  "event-emitter": {
+    "title": "Event emitter with precise on/once/off semantics",
+    "category": "spec",
+    "difficulty": "medium",
+    "max_tokens": 3072
+  },
+  "csv-parser": {
+    "title": "RFC 4180 CSV parser without the csv module",
+    "category": "spec",
+    "difficulty": "hard",
+    "max_tokens": 3072
+  },
+  "expression-eval": {
+    "title": "Recursive-descent arithmetic evaluator",
+    "category": "spec",
+    "difficulty": "hard",
+    "max_tokens": 3072
+  },
+  "semver-compare": {
+    "title": "SemVer 2.0 precedence comparison",
+    "category": "spec",
+    "difficulty": "hard",
+    "max_tokens": 3072
+  }
+}
