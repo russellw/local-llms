@@ -225,5 +225,8 @@ __marimo__/
 # Raw model responses: useful locally for diagnosing failures, too bulky to commit.
 # The per-run .jsonl result files ARE committed -- they are the benchmark record.
 /results/responses/
+# Tool-loop transcripts are NOT ignored, deliberately. They are a few kB each and
+# they are the evidence: a rate says a model missed, the transcript says whether
+# it was confused, stuck, or simply never looked.
 # llama-server stdout per model: diagnostic noise, regenerated each run
 /results/logs/

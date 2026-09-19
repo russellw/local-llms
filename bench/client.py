@@ -25,6 +25,8 @@ class Completion:
     predict_per_s: float | None = None
     stop_reason: str | None = None
     error: str | None = None
+    # The assistant message verbatim. A tool loop has to replay it.
+    message: dict = field(default_factory=dict, repr=False)
     raw: dict = field(default_factory=dict, repr=False)
 
     @property
@@ -37,6 +39,7 @@ class Completion:
     def to_dict(self) -> dict:
         d = asdict(self)
         d.pop("raw")
+        d.pop("message", None)
         d["tok_per_s"] = round(self.tok_per_s, 3)
         return d
 
@@ -86,7 +89,25 @@ class ChatClient:
         if system:
             messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
+        return self.complete(
+            messages, temperature=temperature, max_tokens=max_tokens, seed=seed
+        )
 
+    def complete(
+        self,
+        messages: list[dict],
+        temperature: float = 0.0,
+        max_tokens: int = 2048,
+        seed: int = 0,
+        tools: list[dict] | None = None,
+    ) -> Completion:
+        """One turn of an arbitrary conversation, optionally offering tools.
+
+        The single-prompt `chat` above is this with a two-message history. A
+        tool loop needs the general form, and needs the assistant message back
+        intact -- `message` on the Completion -- because the next request has to
+        replay it verbatim, tool calls and all.
+        """
         payload = {
             "model": self.model,
             "messages": messages,
@@ -95,6 +116,9 @@ class ChatClient:
             "seed": seed,
             "stream": False,
         }
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
 
         t0 = time.monotonic()
         try:
@@ -111,6 +135,7 @@ class ChatClient:
         timings = data.get("timings") or {}
 
         return Completion(
+            message=choice.get("message") or {},
             text=(choice.get("message") or {}).get("content") or "",
             wall_s=wall,
             prompt_tokens=usage.get("prompt_tokens", 0),

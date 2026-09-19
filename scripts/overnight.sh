@@ -3,10 +3,17 @@
 #
 #   scripts/overnight.sh models/*.gguf
 #   REPEATS=3 scripts/overnight.sh models/a.gguf models/b.gguf
+#   SUITES=toolloop scripts/overnight.sh models/a.gguf     # agent loop only
 #
-# For each model: start a server, wait for it to answer, run the suite, stop the
-# server, move on. A model that fails to load is logged and skipped rather than
-# killing the whole night's run.
+# For each model: start a server, wait for it to answer, run both suites, stop
+# the server, move on. A model that fails to load is logged and skipped rather
+# than killing the whole night's run.
+#
+# Loading a model takes minutes on a cold page cache, so both suites run against
+# the one server rather than paying that twice. The tool-loop suite is much the
+# cheaper of the two -- a few hundred tokens per episode against a few thousand
+# per coding task -- so putting it first means a model that is hopeless at
+# driving a loop tells you so in the first few minutes.
 #
 # Results land in results/<model-basename>.jsonl and are resumable: if the run
 # is interrupted, re-run the same command and it picks up the unfinished tasks.
@@ -21,6 +28,7 @@ PORT="${PORT:-8080}"
 # and a cap costs nothing for a model that stops on its own.
 TOKEN_SCALE="${TOKEN_SCALE:-3}"
 LOAD_TIMEOUT="${LOAD_TIMEOUT:-600}"   # seconds to wait for a big model to load
+SUITES="${SUITES:-toolloop code}"     # which suites to run, in order
 LOGDIR="$ROOT/results/logs"
 mkdir -p "$LOGDIR"
 
@@ -78,13 +86,21 @@ for MODEL in "$@"; do
         continue
     fi
 
-    echo "  loaded, running suite"
-    python3 -m bench run \
-        --label "$LABEL" \
-        --url "http://127.0.0.1:$PORT" \
-        --repeats "$REPEATS" \
-        --max-tokens-scale "$TOKEN_SCALE" \
-        2>&1 | sed 's/^/  /'
+    echo "  loaded"
+    for SUITE in $SUITES; do
+        case "$SUITE" in
+            toolloop) CMD=toolloop ;;
+            code)     CMD=run ;;
+            *) echo "  unknown suite '$SUITE', skipping"; continue ;;
+        esac
+        echo "  running $SUITE suite"
+        python3 -m bench "$CMD" \
+            --label "$LABEL" \
+            --url "http://127.0.0.1:$PORT" \
+            --repeats "$REPEATS" \
+            --max-tokens-scale "$TOKEN_SCALE" \
+            2>&1 | sed 's/^/    /'
+    done
 
     stop_server
     echo "  finished: $(date +%H:%M:%S)"

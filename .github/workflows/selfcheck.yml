@@ -1,8 +1,12 @@
 name: selfcheck
 
-# Validates the benchmark itself: every task's reference solution must pass its
-# own tests, and the harness unit tests must pass. Needs no model, no GPU and no
-# dependencies, so it runs in seconds on a standard runner.
+# Validates the benchmark itself, both suites. Every task's reference solution
+# must pass its own tests; the harness unit tests must pass; and the tool-loop
+# scorer must score its scripted agents correctly -- in particular it must still
+# reject the agent that records a verified answer to the wrong question, which is
+# the one failure the harness cannot catch by re-running evidence.
+#
+# Needs no model, no GPU and no dependencies, so it runs in seconds.
 on:
   push:
     branches: [main]
@@ -26,10 +30,10 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - name: List tasks
+      - name: List both suites
         run: python3 -m bench tasks
 
-      - name: Validate tasks and harness
+      - name: Validate tasks, harness and tool-loop scorer
         run: python3 -m bench selfcheck
 
       - name: Regenerate report from committed results
