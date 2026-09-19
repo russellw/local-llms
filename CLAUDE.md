@@ -24,8 +24,12 @@ that records a *verified answer to the wrong question*.
   point is that this runs on a bare distro Python.
 - **Python 3.11 syntax.** Check with
   `ast.parse(src, feature_version=(3, 11))` rather than assuming.
-- **The two suites are never averaged.** They measure different abilities that
-  fail in a different order; a combined score describes neither.
+- **The two suites are never averaged.** The tool loop asks for at least
+  everything the code tasks ask for and more, so a combined score describes
+  neither. Whether the two orderings can also *disagree* is an open question,
+  not a premise: it needs a model that codes worse than another and drives the
+  loop better, and no such pair has been run. Do not write that claim into the
+  docs until the results file shows it.
 - **Results are the record.** The `.jsonl` files and the tool-loop transcripts
   are committed. Do not regenerate or hand-edit them to make a table tidier --
   re-run the model instead, or say the run is stale.

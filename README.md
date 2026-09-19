@@ -188,16 +188,29 @@ among tools, investigate a dataset you can only see through them, and record
 findings whose evidence gets re-executed before it is kept. The models that
 score respectably on the coding tasks above were, in that loop, **inert**. One
 30B-class model made forty tool calls across three runs, every single one of
-them the same tool, and recorded nothing. A 4B in the same harness recorded
-real findings. The ordering was not merely weaker than the coding scores
-predicted — in the middle of the table it was *inverted*.
+them the same tool, and recorded nothing.
 
 The lesson is not that the coding suite is wrong. It measures what it says it
 measures, and small models really are decent at writing a specified function,
 because that is the densest thing in their training data. The lesson is that
-**coding ability and loop-driving ability are separate axes that fail in a
-different order**, and a benchmark that only reports the first will keep
-telling you a model is usable right up until you put it in an agent.
+**a respectable coding score does not imply a model can drive a loop at all**,
+and a benchmark that only reports the first will keep telling you a model is
+usable right up until you put it in an agent.
+
+That is a claim about a threshold, and it is the only one the evidence here
+supports. The stronger claim — that the two are *separate axes*, so a model can
+code worse than another and still drive a loop better — needs a rank inversion
+between the two tables, and this repo does not contain one. Only
+qwen2.5-coder-1.5b has been run through both suites, and it is last in both,
+which is equally consistent with loop-driving simply being the harder test with
+the same ordering underneath. Running gpt-oss-20b and Qwen3-Coder-30B through
+the tool loop would settle it: they are 23 points apart on code, and if that
+gap fails to survive into the loop table the axes are genuinely separate. Each
+would need both protocols run, for the reason given under *Read such a pair as
+a diagnostic*, and the inversion would have to be large — four episodes resolve
+less than twelve tasks do. Until then, keep the two tables apart because one
+may be measuring a strictly harder thing, not because they are known to
+disagree.
 
 That comparison ended up separating the tiers on four things, none of which was
 knowledge or code quality:
