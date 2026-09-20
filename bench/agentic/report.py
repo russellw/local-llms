@@ -68,6 +68,7 @@ def summarise(meta: dict, rows: list[dict]) -> dict:
         "call_error_rate": bad / calls if calls else 0.0,
         "out_of_band": sum(r.get("calls_malformed", 0) for r in rows),
         "repeats": sum(r.get("calls_repeated", 0) for r in rows),
+        "truncated": sum(r.get("calls_truncated", 0) for r in rows),
         "no_call": sum(1 for r in rows if r.get("stopped") == "no_call"),
         "api_errors": sum(1 for r in rows if r.get("stopped") == "error"),
         "voluntary_stop": len(finished) / len(rows),
@@ -163,6 +164,11 @@ def render(summaries: list[dict]) -> str:
             notes.append(f"{s['api_errors']} attempt(s) ended on a server error")
         if s["repeats"]:
             notes.append(f"{s['repeats']} call(s) repeated a call already made")
+        if s.get("truncated"):
+            notes.append(
+                f"{s['truncated']} call(s) ran out of tokens mid-argument "
+                "(tried to send a whole file)"
+            )
         if s["edit_failures"]:
             notes.append(f"{s['edit_failures']} edit(s) were refused")
         notes.append(f"{s['edits']:.1f} edits and {s['test_runs']:.1f} test runs per attempt")

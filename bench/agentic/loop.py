@@ -33,6 +33,29 @@ _NUDGE = (
     "the form you were given."
 )
 
+_TRUNCATED = (
+    "Your last tool call was cut off before it finished and could not be read. "
+    "That usually means you tried to send a whole file at once. Use "
+    "replace_in_file and quote only the lines you are changing."
+)
+
+# A model that overruns its token budget in the middle of a tool call makes the
+# server reject its own output. That is the model overreaching, not the harness
+# failing, so it is counted as a malformed call and the attempt carries on --
+# ending the task on it would score a recoverable mistake as a dead run.
+_TRUNCATED_HINTS = (
+    "parse tool call",
+    "tool call arguments",
+    "parse_error",
+    "invalid string",
+    "missing closing quote",
+)
+
+
+def _is_truncated_call(err: str) -> bool:
+    low = (err or "").lower()
+    return any(h in low for h in _TRUNCATED_HINTS)
+
 SYSTEM = """
 You are fixing a small Python project. The project is on disk and you change it
 by calling tools -- you cannot see or edit the test suite, but you can run it as
@@ -40,6 +63,11 @@ often as you like and it will tell you what is failing.
 
 Work like this: look at what is there, read the code, run the tests to see where
 you stand, make a change, run them again. When the suite passes, call finish.
+
+Change existing code with replace_in_file, quoting just the lines you are
+changing. write_file is for creating a new file: using it to re-send a whole
+file you have already read wastes most of your budget on retyping code that was
+already correct.
 
 Everything the task requires is somewhere in the project. If the code alone does
 not tell you what a function is supposed to do, something else in the project
@@ -63,6 +91,7 @@ class TaskResult:
     calls_unknown_tool: int = 0
     calls_refused: int = 0
     calls_repeated: int = 0
+    calls_truncated: int = 0
     distinct_tools: int = 0
     tools_used: list[str] = field(default_factory=list)
 
@@ -143,6 +172,7 @@ def run_task(
 
     seen_calls: set[str] = set()
     tools_used: list[str] = []
+    consecutive_errors = 0
     t0 = time.monotonic()
     max_tokens = int(task.max_tokens * max_tokens_scale)
 
@@ -157,9 +187,23 @@ def run_task(
                 tools=tools,
             )
             if comp.error:
-                res.stopped = "error"
-                res.error = comp.error
-                break
+                consecutive_errors += 1
+                if _is_truncated_call(comp.error):
+                    res.calls_total += 1
+                    res.calls_malformed += 1
+                    res.calls_truncated += 1
+                    transcript.append(
+                        {"step": step, "text": "", "calls": [],
+                         "results": ["(tool call was cut off mid-argument)"]}
+                    )
+                    messages.append({"role": "user", "content": _TRUNCATED})
+                    consecutive_errors = 0  # recoverable, and it was told how
+                elif consecutive_errors >= 3:
+                    res.stopped = "error"
+                    res.error = comp.error
+                    break
+                continue
+            consecutive_errors = 0
             res.completion_tokens += getattr(comp, "completion_tokens", 0) or 0
 
             parsed = (
@@ -180,7 +224,19 @@ def run_task(
 
             messages.append(comp.message or {"role": "assistant", "content": comp.text})
             done = False
-            for call in parsed.calls[:MAX_CALLS_PER_STEP]:
+            for n, call in enumerate(parsed.calls):
+                # Every call in the message gets an answer, even the ones past
+                # the per-step cap. A tool_call_id left without a reply makes
+                # the *next* request malformed, which would end the attempt on
+                # a server error and score it as the model's failure.
+                if n >= MAX_CALLS_PER_STEP:
+                    _reply(
+                        messages,
+                        native,
+                        call,
+                        "not executed: one tool call per reply, please.",
+                    )
+                    continue
                 res.calls_total += 1
                 if call.malformed:
                     res.calls_malformed += 1

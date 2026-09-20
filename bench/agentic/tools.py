@@ -45,8 +45,10 @@ TOOL_SPECS: list[dict] = [
     {
         "name": "write_file",
         "description": (
-            "Write a file, replacing it entirely, creating it if absent. Send the "
-            "complete new contents. Prefer replace_in_file for a small change."
+            "Create a new file, or replace one entirely, sending its complete "
+            "contents. To change code that is already there, use replace_in_file "
+            "instead -- re-sending a whole file is far slower and risks "
+            "retyping correct code wrongly."
         ),
         "properties": {"path": "File path.", "content": "The complete new file contents."},
         "required": ["path", "content"],
