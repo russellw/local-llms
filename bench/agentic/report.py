@@ -1,0 +1,184 @@
+"""Turn recorded attempts into a table.
+
+One suite, one ground truth: `solved` is the fraction of attempts where the
+hidden test suite passes against what the model left behind. Every other
+column explains how, and none of them is averaged into it.
+"""
+
+from __future__ import annotations
+
+import json
+from collections import defaultdict
+from pathlib import Path
+
+RESULTS_DIR = Path(__file__).resolve().parent.parent.parent / "results"
+
+
+def load_run(path: Path) -> tuple[dict, list[dict]]:
+    meta: dict = {}
+    rows: list[dict] = []
+    for line in path.read_text().splitlines():
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if rec.get("type") == "meta":
+            meta = rec
+        elif rec.get("type") == "result":
+            rows.append(rec)
+    return meta, rows
+
+
+def _mean(vals) -> float:
+    vals = list(vals)
+    return sum(1 for v in vals if v) / len(vals) if vals else 0.0
+
+
+def summarise(meta: dict, rows: list[dict]) -> dict:
+    if not rows:
+        return {"model": meta.get("model", "?"), "n": 0}
+
+    by_task: dict[str, list[bool]] = defaultdict(list)
+    for r in rows:
+        by_task[r["task_id"]].append(bool(r.get("passed")))
+
+    spec_rows = [r for r in rows if r.get("spec_relevant")]
+    finished = [r for r in rows if r.get("stopped") == "finish"]
+    calls = sum(r.get("calls_total", 0) for r in rows)
+    bad = sum(r.get("calls_malformed", 0) + r.get("calls_unknown_tool", 0) for r in rows)
+
+    return {
+        "model": meta.get("model", "?"),
+        "protocol": meta.get("protocol", "?"),
+        "n": len(rows),
+        "n_tasks": len(by_task),
+        "solved": _mean(bool(r.get("passed")) for r in rows),
+        "solved_any": sum(1 for v in by_task.values() if any(v)) / len(by_task),
+        "operates": _mean(bool(r.get("operates_tools")) for r in rows),
+        "verifies": _mean(r.get("test_runs", 0) > 0 for r in rows),
+        "reads_spec": _mean(bool(r.get("read_spec")) for r in spec_rows) if spec_rows else None,
+        "false_done": sum(1 for r in rows if r.get("finished_unverified")),
+        "regressed": sum(1 for r in rows if r.get("regressed")),
+        "edits": sum(r.get("edits_made", 0) for r in rows) / len(rows),
+        "edit_failures": sum(r.get("calls_refused", 0) for r in rows),
+        "test_runs": sum(r.get("test_runs", 0) for r in rows) / len(rows),
+        "steps_used": sum(
+            r.get("steps", 0) / max(1, r.get("budget", 1)) for r in rows
+        ) / len(rows),
+        "call_error_rate": bad / calls if calls else 0.0,
+        "out_of_band": sum(r.get("calls_malformed", 0) for r in rows),
+        "repeats": sum(r.get("calls_repeated", 0) for r in rows),
+        "no_call": sum(1 for r in rows if r.get("stopped") == "no_call"),
+        "api_errors": sum(1 for r in rows if r.get("stopped") == "error"),
+        "voluntary_stop": len(finished) / len(rows),
+        "tok_per_s": _median([r.get("tok_per_s", 0) for r in rows if r.get("tok_per_s")]),
+        "total_min": sum(r.get("wall_s", 0) for r in rows) / 60,
+        "never_solved": sorted(t for t, v in by_task.items() if not any(v)),
+    }
+
+
+def _median(vals):
+    vals = sorted(v for v in vals if v)
+    if not vals:
+        return 0.0
+    m = len(vals) // 2
+    return vals[m] if len(vals) % 2 else (vals[m - 1] + vals[m]) / 2
+
+
+def _pct(x) -> str:
+    return "-" if x is None else f"{round(x * 100):d}%"
+
+
+def render(summaries: list[dict]) -> str:
+    summaries = [s for s in summaries if s.get("n")]
+    if not summaries:
+        return "_No results yet._\n"
+    summaries.sort(key=lambda s: (-s["solved"], -s["solved_any"]))
+
+    w = max(len(s["model"]) for s in summaries)
+    head = (
+        f"| {'Model'.ljust(w)} | solved | any | operates tools | verifies | "
+        "reads the spec | false done | steps | tok/s |"
+    )
+    rule = (
+        f"|{'-' * (w + 2)}|--------|-----|----------------|----------|"
+        "----------------|------------|-------|-------|"
+    )
+    lines = [head, rule]
+    for s in summaries:
+        lines.append(
+            f"| {s['model'].ljust(w)} | {_pct(s['solved']):>6} | "
+            f"{_pct(s['solved_any']):>3} | {_pct(s['operates']):>14} | "
+            f"{_pct(s['verifies']):>8} | {_pct(s['reads_spec']):>14} | "
+            f"{s['false_done']:>10} | {_pct(s['steps_used']):>5} | "
+            f"{s['tok_per_s']:>5.1f} |"
+        )
+
+    n_tasks = max(s["n_tasks"] for s in summaries)
+    reps = max(1, max(s["n"] for s in summaries) // max(1, n_tasks))
+    lines += [
+        "",
+        "### Reading these numbers",
+        "",
+        f"Sample: {n_tasks} task(s) x {reps} attempt(s) per model.",
+        "",
+        "**solved** is the score, and it is the only column that is. It is the",
+        "fraction of attempts where the hidden test suite passes against the",
+        "project the model left behind -- not what the model claimed, and not",
+        "whether some intermediate run went green. Everything else explains how.",
+        "",
+        "- **any** — tasks solved by at least one attempt. The gap from *solved*",
+        "  measures consistency.",
+        "- **operates tools** — four fifths of calls in the tool-call field, four",
+        "  fifths not refused, at least three distinct tools. A floor, not a",
+        "  skill: below it, nothing else in the row means anything.",
+        "- **verifies** — ran the tests at least once. A model that edits blind",
+        "  is guessing even when it guesses right.",
+        "- **reads the spec** — on tasks with a requirement stated only in prose,",
+        "  whether it opened the file holding it. Nothing points it there.",
+        "- **false done** — called `finish` with tests still failing: it believed",
+        "  it was done and was not. The agentic failure that costs most in real",
+        "  use, and the one no amount of re-running the evidence can catch.",
+        "- **steps** — fraction of the step budget spent. Low with a high score",
+        "  is a model that knew when it was done; high with a low score is one",
+        "  that wandered until it was stopped.",
+        "",
+    ]
+    for s in summaries:
+        notes = []
+        if s["false_done"]:
+            notes.append(
+                f"**{s['false_done']} attempt(s) declared done with tests failing**"
+            )
+        if s["regressed"]:
+            notes.append(f"{s['regressed']} attempt(s) had it green and then broke it")
+        if s["call_error_rate"] > 0.05:
+            notes.append(
+                f"{_pct(s['call_error_rate'])} of calls were malformed or named no "
+                f"tool ({s['out_of_band']} written in the reply text)"
+            )
+        if s["no_call"]:
+            notes.append(f"{s['no_call']} attempt(s) ended with prose instead of a call")
+        if s["api_errors"]:
+            notes.append(f"{s['api_errors']} attempt(s) ended on a server error")
+        if s["repeats"]:
+            notes.append(f"{s['repeats']} call(s) repeated a call already made")
+        if s["edit_failures"]:
+            notes.append(f"{s['edit_failures']} edit(s) were refused")
+        notes.append(f"{s['edits']:.1f} edits and {s['test_runs']:.1f} test runs per attempt")
+        if s["never_solved"]:
+            notes.append("never solved: " + ", ".join(s["never_solved"]))
+        lines.append(f"**{s['model']}** ({s['protocol']} tool calls) -- " + "; ".join(notes))
+    return "\n".join(lines) + "\n"
+
+
+def build_report(results_dir: Path | None = None) -> str:
+    d = results_dir or RESULTS_DIR
+    summaries = []
+    if d.is_dir():
+        for p in sorted(d.glob("*.jsonl")):
+            meta, rows = load_run(p)
+            if meta.get("suite") != "agentic":
+                continue
+            summaries.append(summarise(meta, rows))
+    return render(summaries)

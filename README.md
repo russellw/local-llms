@@ -2,23 +2,41 @@
 
 [![selfcheck](https://github.com/russellw/local-llms/actions/workflows/selfcheck.yml/badge.svg)](https://github.com/russellw/local-llms/actions/workflows/selfcheck.yml)
 
-Benchmarking locally-runnable LLMs on ordinary CPU hardware.
+Benchmarking locally-runnable LLMs on ordinary CPU hardware, on the only
+question that turns out to matter: **can it do a real piece of coding work by
+itself?**
 
 Every model here runs on the machine in front of you: no GPU, no API key, no
 data leaving the box.
 
-There are **two suites**, because there are two different ways a local model
-turns out to be unusable and one of them is invisible to the other:
+## What it measures
 
-| suite | asks | scored by |
-|---|---|---|
-| **code** | can it write a correct function from a precise spec? | hidden unit tests |
-| **tool-loop** | can it operate an agent loop — choose tools, recover from a refusal, go and find what it was not handed, and stop? | re-running the query a finding carries |
+One suite. Each task is a small Python project that does not pass its tests,
+and a test suite the model **cannot read but can run as often as it likes**.
+The model gets six tools -- list, read, write, targeted replace, run the tests,
+stop -- and a step budget. It passes when the hidden suite passes against
+whatever it left on disk.
 
-They are never averaged. A 7B can score respectably on the first and record
-nothing at all on the second, and a number that splits the difference would
-describe neither. The tok/s figures sit alongside both, because on this
-hardware **too slow to use** is a third way to be unusable.
+That is deliberately one task and not two, because it is the compound ability
+that decides whether a local model is any use:
+
+| it has to | or it fails by |
+|---|---|
+| operate the tools at all | writing calls as prose nobody executes |
+| navigate code it did not write | editing the wrong file, or guessing at a function it never read |
+| work out what is actually wrong | fixing the symptom the first failure names and stopping |
+| write correct, non-trivial Python | passing eleven of twelve and calling it done |
+| check itself | declaring victory over a suite that is still red |
+
+Earlier versions of this repo split that into a write-a-function suite and a
+drive-a-loop suite. Both are in `results/archive/`, along with what they
+measured. They were separated because the abilities fail in different places,
+and merged again because a model that has one and not the other is not usable
+either way, so a table with two columns and a footnote was answering a question
+nobody had.
+
+The tok/s figures sit alongside the scores, because on this hardware **too slow
+to use** is its own way to be unusable.
 
 ## The machine
 
@@ -45,22 +63,24 @@ Two consequences shape every model choice in this repo:
    model's speed. On this box that is the difference between unusable and
    usable.
 
+An agentic suite is far more sensitive to this than a single-shot one. A task
+here is twenty-odd model turns, each replaying a conversation that grows with
+every file read, so prompt processing stops being a rounding error and starts
+being most of the wall clock.
+
 ## Quick start
 
 ```bash
 scripts/build.sh                     # build llama.cpp (slow: ~15 min on 2 cores)
-scripts/fetch-model.sh Qwen/Qwen2.5-Coder-7B-Instruct-GGUF \
-    qwen2.5-coder-7b-instruct-q4_k_m.gguf
+scripts/fetch-model.sh mistralai/Devstral-Small-2507_gguf \
+    Devstral-Small-2507-Q4_K_M.gguf
 
-scripts/serve.sh models/qwen2.5-coder-7b-instruct-q4_k_m.gguf   # terminal 1
-python3 -m bench toolloop --label qwen2.5-coder-7b-q4           # terminal 2, ~5 min
-python3 -m bench run      --label qwen2.5-coder-7b-q4           # terminal 2, ~1 hour
+scripts/serve.sh models/Devstral-Small-2507-Q4_K_M.gguf   # terminal 1
+python3 -m bench run --label devstral-small-2507-q4       # terminal 2
 ```
 
-Run the tool-loop suite first. It is two orders of magnitude cheaper — a few
-hundred tokens an episode against a few thousand a coding task — and a model
-that cannot drive a loop will tell you so in the first five minutes, before you
-spend an hour finding out it writes lovely Python.
+Start with a single task -- `--task inventory-ledger` -- to see what the loop
+looks like before committing to a full run.
 
 No `pip install`: the harness is standard library only, so it runs on a bare
 Python 3.11+.
@@ -69,352 +89,158 @@ Python 3.11+.
 
 | Command | What it does |
 |---|---|
-| `python3 -m bench tasks` | list both suites |
-| `python3 -m bench selfcheck` | validate the tasks, the harness and the tool-loop scorer |
-| `python3 -m bench run --label NAME` | run the code suite against the served model |
-| `python3 -m bench toolloop --label NAME` | run the tool-loop suite against the served model |
+| `python3 -m bench tasks` | list the tasks |
+| `python3 -m bench selfcheck` | prove the suite still measures what it claims |
+| `python3 -m bench run --label NAME` | run the suite against the served model |
 | `python3 -m bench report --write` | regenerate `results/REPORT.md` from all runs |
 
-Useful `run` flags: `--task <id-or-category>` (repeatable) to run a subset,
-`--repeats N` to sample each task N times, `--fresh` to discard prior results.
-`toolloop` takes the same, with `--episode` in place of `--task`.
+Useful `run` flags: `--task <id>` (repeatable) to run a subset, `--repeats N`
+to sample each task N times, `--protocol native|text|auto`, `--fresh` to
+discard prior results, `--max-tokens-scale 3` for a reasoning model that needs
+room to think before each call.
 
-Runs default to temperature 0. That is the right setting for a single pass —
+Runs default to temperature 0. That is the right setting for a single pass --
 greedy decoding is deterministic, so the score is reproducible. It is the wrong
-setting for `--repeats > 1`, where every attempt would return the identical
-answer, so passing repeats without a temperature switches to 0.2 and says so.
+setting for `--repeats > 1`, where every attempt would replay the identical
+run, so passing repeats without a temperature switches to 0.2 and says so.
 
-**`selfcheck` is the guard rail.** A benchmark whose tests are subtly wrong
-measures nothing, so it checks three things:
+**`selfcheck` is the guard rail**, and it is the thing to run after touching a
+task, the workspace or the scorer. It checks three things:
 
-- every task's `reference.py` passes its own `tests.py`
-- the harness itself behaves — code extraction handles the dozen ways a model
-  can wrap (or fail to wrap) a code block, and the sandbox actually fails wrong
-  answers, fails syntax errors, kills infinite loops, and isolates workdirs
-- the tool-loop scorer behaves. That suite has no reference solution to
-  execute, so its guard is a set of scripted agents played against the scorer:
-  a correct one must score every axis, a *plausible-looking wrong* one must be
-  caught, a spiralling one must score zero, and one that writes prose instead
-  of calling anything must not be credited with operating the tools.
+- **Every task is solvable and not already solved.** Its `reference/` overlay
+  must make the hidden suite pass, and the project as shipped must fail it. A
+  task whose own reference fix fails measures nothing; a task that passes as
+  shipped measures nothing either, and both are easy to introduce by accident.
+  It has already caught a test of mine that was wrong rather than a reference
+  that was.
+- **The workspace cannot be talked out of its boundaries.** The tests must not
+  be readable, reachable by a relative path, or visible in a listing, and
+  failure output must not carry their source back to the model.
+- **The scorer scores the right thing.** Scripted agents are played against it:
+  one that applies the reference fix must pass, one that announces success
+  without changing anything must not, one that gets the suite green and then
+  breaks it again must be scored on the wreckage, and one whose every call is
+  written as prose must fail the tool-operating floor.
 
-Run it after touching any task. It has already caught three bugs — two in
-tests, one in a reference — that would otherwise have been silently scored
-against the models.
+## The tasks
 
-## Suite one: the coding tasks
+Four, all deliberately hard. A task that a 7B solves on the first try tells you
+nothing you did not already know.
 
-Twelve tasks, all verified by executing the model's code against hidden unit
-tests. Nothing is graded by eyeballing or by another model.
-
-| Category | Tasks | What it probes |
+| Task | The work | The trap |
 |---|---|---|
-| `algorithm` | rle-codec, merge-intervals, roman-numerals, binary-search-insert | baseline competence and edge cases |
-| `datastruct` | topological-sort, autocomplete-trie | does it build the structure that was asked for |
-| `bugfix` | fix-lru-cache, fix-min-heap | reading broken code and reasoning about *why* it is broken |
-| `spec` | event-emitter, csv-parser, expression-eval, semver-compare | following a long, precise specification exactly |
+| `inventory-ledger` | FIFO stock costing with fractional unit costs | rounding each lot separately instead of once per issue -- and the rule is stated only in `README.md` |
+| `route-matcher` | URL routing with parameter and wildcard segments | matching in registration order, when the spec decides by segment specificity |
+| `log-compactor` | one-pass compaction of a record stream | fixing the logic and leaving the per-record scan, so it stays quadratic and the suite times out |
+| `retry-policy` | backoff, jitter, throttling and an elapsed budget | fixing the arithmetic while the classifier still calls `429` fatal, so the throttling branch is never reached |
 
-The suite is deliberately weighted away from "recite a LeetCode answer".
-Several tasks defend against the shortcut rather than the wrong answer:
-
-- **binary-search-insert** passes the sequence in as an object that counts
-  index accesses and refuses to be iterated, so a linear scan fails outright.
-- **autocomplete-trie** checks that a rare prefix in a 20,000-word dictionary
-  stays cheap, so a flat list with `startswith` fails.
-- **csv-parser** and **expression-eval** forbid the stdlib module that would
-  trivialise them.
-- **fix-lru-cache** and **fix-min-heap** hand the model plausible-looking code
-  with several interacting bugs, which is much closer to real work than writing
-  from scratch.
-
-`spec` is usually the category that separates models. Small models can often
-produce a working algorithm but lose points on the sixth clause of a
-specification — precisely the failure mode that makes a coding assistant
-frustrating in practice.
-
-### What the coding tasks do not measure
-
-Stated plainly, because these are deliberate boundaries rather than oversights:
-
-**Training-data contamination is not eliminated, only made less useful.** An
-LRU cache, a min-heap, a CSV parser and a semver comparator are all classic
-exercises that are certainly in every model's training data. That is survivable
-because the tasks do not score "did you recognise this problem" — they score
-conformance to a specific written spec, and the specs deliberately deviate from
-the textbook version. `merge-intervals` merges intervals that are merely
-*adjacent*, not just overlapping. `rle-codec` writes the count even when it is 1.
-The observed failures match this design: models produce the recognisable general
-shape and then miss a clause. A model that had memorised the answer outright
-would not fail that way. Treat contamination as damped, not absent.
-
-**Sample size is small.** Twelve tasks resolves large differences between
-models and nothing finer. `results/REPORT.md` restates this next to the numbers.
-
-**Scope is single-file Python.** Every task is one self-contained module with a
-clean specification. Real coding work is multi-file, involves existing code you
-did not write, and is iterative — you get a failing test and try again. None of
-that is measured here. A model that scores well on this suite has demonstrated
-that it can write correct Python to a precise spec; it has not demonstrated that
-it can work in your codebase.
-
-**Nothing here is agentic.** One message in, one message out, no tools, no
-state, no second chance. That is the single biggest blind spot in this suite
-and it is why the second one exists.
-
-**One hardware configuration, one quantisation.** Results are Q4_K_M (or the
-model's native format) on one CPU. Quantisation quality effects and any
-GPU-relevant conclusions are out of scope; the tok/s figures transfer to nothing
-but a machine with similar memory bandwidth.
+Each has several interacting bugs rather than one, because a single planted bug
+rewards pattern-matching and a spec clause nobody mentioned rewards reading.
+Each carries a requirement that **cannot be inferred from the code** -- stated
+in a `README.md` or `SPEC.md` that nothing points the model towards. Whether it
+goes and reads that file is its own column in the report.
 
 ### Adding a task
 
-Create `tasks/<id>/` with three files, and an entry in `tasks/manifest.json`:
+```
+tasks/<id>/
+    task.json     title, brief, budget, difficulty, spec_file
+    project/      the tree the model is given, copied fresh per attempt
+    tests/        run_tests.py -- hidden; copied in only to run
+    reference/    files overlaid on project/ to make the suite pass
+```
 
-- `prompt.md` — the user message. Be exhaustive about edge cases; ambiguity in
-  the prompt shows up as noise in the scores.
-- `tests.py` — imports from `solution`, prints failures, exits non-zero. Report
-  *all* failures rather than stopping at the first: the detail is what makes a
-  result diagnosable later.
-- `reference.py` — a known-good solution. Then run `python3 -m bench selfcheck`.
+`tests/run_tests.py` must print `RESULT <n> passed <m> failed` and exit
+non-zero on failure. Print **curated one-line failures and never a traceback**:
+a traceback quotes the failing source line, which for a hidden suite hands the
+model the assertion it is supposed to satisfy. Then run
+`python3 -m bench selfcheck`.
 
-## Suite two: the tool loop
+## What this does not measure
 
-### Why a second suite
+Stated plainly, because these are deliberate boundaries rather than oversights:
 
-The scores above are real and they are also misleading, in a specific way that
-took an unrelated project to notice.
+**Four tasks is a small sample.** It resolves large differences between models
+and nothing finer. Attempts at the same task are correlated, so the effective
+sample size is closer to the number of *tasks* than the number of attempts.
 
-A separate piece of work drove five models through an agentic data audit: pick
-among tools, investigate a dataset you can only see through them, and record
-findings whose evidence gets re-executed before it is kept. The models that
-score respectably on the coding tasks above were, in that loop, **inert**. One
-30B-class model made forty tool calls across three runs, every single one of
-them the same tool, and recorded nothing.
+**The projects are small and synthetic.** A few files each, written to be
+broken in specific ways. That is what makes them deterministic, replayable and
+free of contamination, and it is also why passing here is not evidence a model
+can work in a real repository with a hundred thousand lines and no spec.
 
-The lesson is not that the coding suite is wrong. It measures what it says it
-measures, and small models really are decent at writing a specified function,
-because that is the densest thing in their training data. The lesson is that
-**a respectable coding score does not imply a model can drive a loop at all**,
-and a benchmark that only reports the first will keep telling you a model is
-usable right up until you put it in an agent.
+**Whole-file writes and exact-string replaces are not a real editor.** No
+patches, no partial application, no failure to apply. A model that is good at
+producing diffs gets no credit for it, and one that is bad at it is not
+punished.
 
-That is a claim about a threshold, and it is the only one the evidence
-supports. The stronger claim — that the two are *separate axes*, so a model can
-code worse than another and still drive a loop better — needs a rank inversion
-between the two tables. **That test has now been run, and there is no
-inversion.**
+**One hardware configuration, one quantisation.** Results are Q4_K_M (or the
+model's native format) on one CPU. Quantisation quality effects and any
+GPU-relevant conclusions are out of scope; the tok/s figures transfer to
+nothing but a machine with similar memory bandwidth.
 
-gpt-oss-20b and Qwen3-Coder-30B are 23 points apart on code. Put through the
-tool loop, both protocols each, they **tie**:
+**Contamination is damped, not absent.** The projects are written for this
+repo, so they are not in any model's training data today. Nothing stops that
+changing, and the defence is that they are cheap to replace.
 
-| model | code pass@1 | asks the right question |
-|---|---|---|
-| gpt-oss-20b-MXFP4 | 81% | 75% |
-| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M | 58% | 75% |
-| qwen2.5-coder-1.5b-instruct-q4_k_m | 8% | 25% |
-
-No comparable pair disagrees, and every loop score sits at or below its code
-score. That is what you would see if driving a loop required everything writing
-code requires *and more* — not something orthogonal to it.
-
-Two qualifications, both weakening rather than strengthening that reading. A
-tie is not an ordering: a 23-point code gap produced no separation at all, so
-what this establishes is that the suite cannot *discriminate* between these two
-models, not that their loop ability is equal. And the reason it cannot is a
-ceiling — `premise` has never been passed by anything, so the effective top
-score is 3 of 4 and both models are pinned against it. A fifth episode that a
-good model can actually solve might separate them.
-
-What did separate them is not in the scored column. The 30B sprang the shape
-trap and recovered from it, reached for more tools (6.8 per episode against
-5.1), repeated no call, and never once claimed a number its own evidence did
-not return, where gpt-oss did that three times. Those are diagnostics, not the
-score, and they were read *after* the scores tied — so they are a reason to
-build a sharper episode, not a result.
-
-That comparison ended up separating the tiers on four things, none of which was
-knowledge or code quality:
-
-| | operates the tools | not confused by shapes | asks the right question | seeks out information |
-|---|---|---|---|---|
-| small local models | 1 of 3 | no | — | no |
-| a 63 GB local model | yes | yes | **no** | **no** |
-| a frontier model | yes | yes | yes | yes |
-
-This suite is those four columns, made cheap enough to run on a laptop.
-
-### The episodes
-
-Four episodes against a tiny fixed dataset — a metering export joined to a
-premises register, with defects planted in it. There is no database and no
-network: `bench/toolloop/world.py` is the whole thing, and `selfcheck`
-re-derives every number the episodes expect, so a careless edit fails CI
-instead of quietly changing the question.
-
-| Episode | Probes | The trap |
-|---|---|---|
-| `basics` | mechanics | nothing. Count the negative values in a column, record it, stop. A model that cannot do this cannot do any of the rest. |
-| `shapes` | recovery | the column can only be *sampled*, and sampling returns `99 Aaaaaaa Aaaaaa` — a shape, not a value. A model that searches for the shape is refused and has to work out why. |
-| `dictionary` | initiative | the question is "how many states are not valid", and which states are valid is written only in a customer document nobody told it to open. |
-| `premise` | judgment | the join works literally and gives **14**. The answer is **4**, and the reason — that both sides carry a decorative prefix — is in the same unopened document. |
-
-`premise` is the one worth watching, because it is the failure that survives
-every safeguard. The model writes a well-formed query, the harness re-runs it,
-the number matches what the model claimed, and the finding is recorded. It is
-correct, verified, and answers a question nobody asked. Evidence re-execution
-catches an invented number; it cannot catch a well-formed question about the
-wrong premise, and no amount of tightening the harness will change that.
-
-A 1.5B model reached that failure on its first attempt, in three steps and
-twenty-four seconds.
-
-### How it is scored
-
-**Only queries are scored. Prose is never scored.** A finding counts when the
-tool call it carries is about the right column and returns the right number —
-both machine-readable. Titles, summaries and explanations are written to the
-transcript for a human to read and contribute nothing. A benchmark that grades
-text has to decide what a good sentence is, and this one declines to.
-
-The report gives four rates and no total:
-
-- **operates tools** — four fifths of its calls arrived in the tool-call field
-  rather than the reply text, four fifths came back with an answer rather than
-  a refusal, and it reached for at least three different tools. A floor, not
-  a skill.
-- **not confused by shapes** — of the attempts that were refused for searching
-  on a redaction, the fraction that then did something different. Blank means
-  the trap was never sprung.
-- **asks the right question** — the fraction of episodes where the defect was
-  actually established. This is the score.
-- **seeks out information** — of the episodes whose answer is only in a
-  supplied document, the fraction where any document was opened.
-
-Plus the diagnostics that turned out to matter more than the rates: how much of
-the step budget was spent, whether the run ended because the model decided it
-had or because the budget stopped it, how many calls repeated a call already
-made, and how many findings were rejected for claiming a number their own
-evidence did not return.
-
-**Tool calls go over the `tools` API parameter by default**, the way a real
-agent drives a model, so results transfer. `--protocol text` describes the
-tools in the system prompt instead, for servers that reject the parameter;
-`auto` picks by testing whether the *server* accepts it, never whether the
-model used it, because a model that is offered tools and ignores them is
-exactly what this suite is trying to catch.
-
-A call written into the reply text instead of the tool-call field is salvaged
-and executed, so the rest of the episode can still be measured — but counted as
-malformed, and a model whose calls mostly arrive that way fails the
-`operates tools` floor. That is not a technicality. qwen2.5-coder-1.5b emits
-the right tool name and every argument correctly, and then wraps the object in
-a markdown fence instead of the `<tool_call>` tags its own chat template
-explicitly asked for, on **every call it makes**. Verified against the template
-the server reports, so this is the model missing an instruction it was given,
-not the plumbing failing to offer one. A real agent reads the field, finds it
-empty, and sees a model that said nothing at all.
-
-When a model fails the floor purely on channel, re-run it with
-`--protocol text`, which asks for the same calls as a JSON block and so scores
-what it was actually doing. The pair separates *cannot follow the tool-call
-protocol* from *cannot reason in a loop* — two different problems, and only the
-first one has a workaround.
-
-**Read such a pair as a diagnostic, not a ranking.** The two protocols are not
-equivalent measurements: the text one spends several hundred tokens of system
-prompt describing the tools, which is itself a burden on a small model. On the
-1.5B the two rows disagree in both directions — the channel fix takes
-`operates tools` from 0% to 42%, and the score it was actually after *falls*.
-Fixing the plumbing did not make it able to do the job, which is the more
-useful thing to learn.
-
-**The text protocol can cost a model its initiative.** On the 30B the mechanics
-are fine under both protocols — 100% `operates tools` either way — and the
-`dictionary` episode still flips completely:
-
-| protocol | `dictionary` solved | document opened |
-|---|---|---|
-| native | 3/3 | 3/3 |
-| text | 0/3 | 0/3 |
-
-Same weights, same episode, same temperature. The only thing that changed is
-where the tools were described, and the column that moved is the one this suite
-exists to measure. Do not read a text-protocol row as a weaker measurement of
-the same thing; it is a measurement of something else.
-
-**`gpt-oss-20b-MXFP4-textproto` is a harness artifact, not a result.** Its 0%
-is `bench/client.py` reading `message.content` and finding an empty string:
-gpt-oss answers in the harmony *analysis* channel, which llama-server returns
-as a separate `reasoning_content` field, and the reply is discarded unread.
-Probed directly, that field holds the model working the episode out correctly
--- naming `count_rows`, its arguments, then `record_finding` and `finish` --
-while `content` is `''` and the tool-call field is empty. The row is left in
-`results/REPORT.md` because results are the record, but it measures this
-harness against this model's output format and nothing about driving a loop.
-Its auto-generated note ("ended with prose instead of a tool call") is the
-generic `no_call` wording and is wrong here: there was no prose.
-
-### What the tool loop does not measure
-
-**It is not a measure of judgment in general.** Four episodes on one small
-fixture. A model that passes `premise` has read one document and applied one
-rule; it has not demonstrated that it would audit your data well.
-
-**The dataset is fixed and in the open.** Nothing stops a future model from
-having read this repository. The episodes are cheap to replace and the numbers
-are all derived in `world.py`, so swapping the fixture is a small job — but
-today the defence is that the file is obscure, which is not much of one.
-
-**Passing the floor says little.** `operates tools` at 100% means the model can
-hold a fork. Everything interesting is in the last two columns.
-
-**No ceiling has been established on `premise`.** `selfcheck` proves each
-episode is *mechanically* solvable — a scripted agent making the right calls
-scores it — but that is a weaker claim than "a competent model would solve it".
-Three of the four are now past that bar: gpt-oss-20b and Qwen3-Coder-30B each
-cleared `basics`, `shapes` and `dictionary` on all three attempts. `premise`
-has never been solved by any model, so for that one episode a 0% could still in
-principle be the episode's fault rather than the model's. Treat a low score as
-a reason to open the transcript, which is what the transcripts are for.
-
-### Adding an episode
-
-Episodes live in `bench/toolloop/episodes.py` — a brief, a step budget, and a
-`Target` naming the columns the evidence must reference and the number it must
-return. Plant the defect in `world.py`, add its expected count to
-`_world_checks` in `bench/toolloop/selftest.py`, and add a scripted ideal agent
-to `_IDEAL` there. `selfcheck` then holds you to it: if your ideal agent cannot
-score the episode, models have no chance either, and you will find out in
-seconds rather than after an overnight run.
+**No ceiling has been established.** `selfcheck` proves each task is solvable
+by applying its own reference fix, which is a weaker claim than "a competent
+model would solve it". Until a model known to be capable has scored well here,
+a 0% could in principle be a task's fault rather than a model's. Treat a low
+score as a reason to open the transcript, which is what the transcripts are
+for.
 
 ## Reading the results
 
-Each run appends to `results/<label>.jsonl`, flushed after every task, so an
+Each run appends to `results/<label>.jsonl`, flushed after every attempt, so an
 overnight run that dies at 4am keeps everything it finished. Re-running the
-same label resumes where it stopped. Full model responses land in
-`results/responses/<label>/` (gitignored) — read those when a score surprises
-you.
+same label resumes where it stopped. A readable transcript of every attempt
+lands in `results/transcripts/<label>/`, and those are committed.
 
-Tool-loop runs work the same way one directory down, in `results/toolloop/`,
-with a readable transcript of every episode in
-`results/toolloop/transcripts/<label>/`. **Read the transcripts.** The rates
-tell you a model missed; only the transcript tells you it named a table that
-does not exist, was handed the list of real tables in the error, and quit —
-which is a different problem from not knowing the answer, and the two look
-identical in a score.
+**Read the transcripts.** A rate tells you a model failed; only the transcript
+tells you whether it never opened the spec, edited a file it had not read, or
+got the suite green and then broke it again on the next call. Those are
+different problems with different fixes and they look identical in a score.
 
-The code report shows:
+**solved** is the score, and it is the only column that is: the fraction of
+attempts where the hidden suite passes against what the model left behind --
+not what the model claimed, and not whether some intermediate run went green.
+The rest explain how:
 
-- **pass@1** — mean success rate over all attempts. The headline number.
-- **pass@any** — solved at least once. With `--repeats > 1` the gap between
-  these two measures consistency, which matters more than peak ability when
-  you are waiting minutes per answer.
-- **tok/s** — median generation speed, taken from llama.cpp's own timings.
-- Notes separating the failure modes that are *not* "wrote wrong code":
-  responses that hit the token limit, responses containing no code block, and
-  attempts that never finished generating inside the request timeout. That last
-  one means **too slow to use**, not **too stupid to solve** — a distinction
-  worth keeping, since on this hardware a reasoning model can spend over an
-  hour on a single task and be marked wrong for it.
+- **operates tools** -- four fifths of calls in the tool-call field, four
+  fifths not refused, at least three distinct tools. A floor, not a skill:
+  below it nothing else in the row means anything.
+- **verifies** -- ran the tests at least once. A model that edits blind is
+  guessing even when it guesses right.
+- **reads the spec** -- opened the file holding the requirement that cannot be
+  inferred. Nothing points it there.
+- **false done** -- called `finish` with tests still failing. The agentic
+  failure that costs most in real use: confident, well-formed, and wrong.
+
+`results/archive/` holds the two suites this replaced, with their results and
+their report, unchanged.
+
+## Tool-call protocols
+
+Tool calls go over the `tools` API parameter by default, the way a real agent
+drives a model, so results transfer. `--protocol text` describes the tools in
+the system prompt instead, for servers that reject the parameter; `auto` picks
+by testing whether the *server* accepts it, never whether the model used it,
+because a model that is offered tools and ignores them is exactly what this
+suite is trying to catch.
+
+A call written into the reply text instead of the tool-call field is salvaged
+and executed, so the rest of the attempt can still be measured -- but counted
+as malformed, and a model whose calls mostly arrive that way fails the
+`operates tools` floor. A real agent reads the field, finds it empty, and sees
+a model that said nothing at all.
+
+**A reply carried in a reasoning channel is not silence.** A model in the
+harmony format may answer entirely in its analysis channel, which llama-server
+returns as `reasoning_content` beside an empty `content`. Reading only
+`content` there scores the harness rather than the model -- it once recorded a
+model at 0% while its discarded replies contained the correct tool calls -- so
+both are read.
 
 ## Tuning
 
@@ -430,23 +256,23 @@ roughly halves bytes-read-per-token versus Q8 for a small quality cost; on a
 bandwidth-bound box that is close to a 2x speedup. Q5_K_M is worth testing when
 a model is close to passing but sloppy.
 
-Context size is a lever in both directions, and it is easy to get wrong:
+Context size matters more here than it did for single-shot prompting, and it is
+easy to get wrong in both directions:
 
-- **Too small silently destroys scores.** Context must hold the prompt *and*
-  the entire response. gpt-oss-20b at `CTX=8192` hit the ceiling mid-thought on
-  7 of 12 `spec` attempts and returned no code at all — scoring zero on ability
-  it may well have had. If a model shows truncated responses in the report,
-  raise `CTX` before believing the number.
+- **Too small silently destroys scores.** An agentic conversation grows with
+  every file read and every test report. If it outgrows the context the model
+  loses the beginning of its own investigation and starts repeating work.
+  gpt-oss-20b at `CTX=8192` previously hit the ceiling mid-thought on 7 of 12
+  single-shot attempts; a tool loop reaches that ceiling far sooner.
 - **Too large costs real speed.** Raising the same model to `CTX=32768` dropped
   it from 5.1 to ~3.2 tok/s, because attention work grows with sequence length
-  and the KV cache competes for the same scarce bandwidth. Provision context
-  for the responses you actually see, not for the maximum the model supports.
+  and the KV cache competes for the same scarce bandwidth.
 
 ## A note on running model-generated code
 
-`bench/sandbox.py` executes model output in a subprocess with a wall-clock
-timeout, a 2 GB address-space cap, a process-count cap, and a scratch working
-directory that is deleted afterwards.
+The harness executes model output in a subprocess with a wall-clock timeout, a
+2 GB address-space cap, a process-count cap, and a scratch working directory
+that is deleted afterwards.
 
 Those limits stop *accidents* — runaway loops, memory bombs, a stray
 `while True`. They are **not** a security boundary. The code runs as your user,

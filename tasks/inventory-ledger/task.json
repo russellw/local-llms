@@ -1,0 +1,10 @@
+{
+  "title": "FIFO inventory ledger with fractional unit costs",
+  "brief": "The inventory ledger in this project does not pass its test suite. Find out why and fix it. You can run the tests whenever you like; you cannot read them.",
+  "budget": 26,
+  "difficulty": "hard",
+  "test_timeout": 60,
+  "max_tokens": 1600,
+  "spec_file": "README.md",
+  "trap": "rounding each lot's contribution separately, instead of once per issue"
+}

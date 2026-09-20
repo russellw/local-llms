@@ -1,0 +1,10 @@
+{
+  "title": "Single-pass log compaction with a complexity requirement",
+  "brief": "The log compactor in this project does not pass its test suite. Find out why and fix it. You can run the tests whenever you like; you cannot read them.",
+  "budget": 26,
+  "difficulty": "hard",
+  "test_timeout": 90,
+  "max_tokens": 1600,
+  "spec_file": "SPEC.md",
+  "trap": "fixing the logic but leaving the per-record scan, so it stays quadratic"
+}

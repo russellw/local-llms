@@ -1,0 +1,10 @@
+{
+  "title": "Retry policy spanning a classifier and a backoff calculator",
+  "brief": "The retry policy in this project does not pass its test suite. Find out why and fix it. You can run the tests whenever you like; you cannot read them.",
+  "budget": 28,
+  "difficulty": "hard",
+  "test_timeout": 60,
+  "max_tokens": 1600,
+  "spec_file": "SPEC.md",
+  "trap": "fixing the backoff arithmetic while leaving the classifier wrong, so throttling never reaches the code that handles it"
+}
