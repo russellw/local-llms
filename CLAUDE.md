@@ -26,10 +26,10 @@ that records a *verified answer to the wrong question*.
   `ast.parse(src, feature_version=(3, 11))` rather than assuming.
 - **The two suites are never averaged.** The tool loop asks for at least
   everything the code tasks ask for and more, so a combined score describes
-  neither. Whether the two orderings can also *disagree* is an open question,
-  not a premise: it needs a model that codes worse than another and drives the
-  loop better, and no such pair has been run. Do not write that claim into the
-  docs until the results file shows it.
+  neither. Whether the two orderings can also *disagree* was tested and they do
+  not: gpt-oss-20b and Qwen3-Coder-30B are 23 code points apart and tie at 75%
+  on the loop. Do not write the stronger "separate axes / different order"
+  claim into the docs unless a results file shows an actual rank inversion.
 - **Results are the record.** The `.jsonl` files and the tool-loop transcripts
   are committed. Do not regenerate or hand-edit them to make a table tidier --
   re-run the model instead, or say the run is stale.

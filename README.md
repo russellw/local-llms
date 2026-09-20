@@ -197,20 +197,39 @@ because that is the densest thing in their training data. The lesson is that
 and a benchmark that only reports the first will keep telling you a model is
 usable right up until you put it in an agent.
 
-That is a claim about a threshold, and it is the only one the evidence here
+That is a claim about a threshold, and it is the only one the evidence
 supports. The stronger claim — that the two are *separate axes*, so a model can
 code worse than another and still drive a loop better — needs a rank inversion
-between the two tables, and this repo does not contain one. Only
-qwen2.5-coder-1.5b has been run through both suites, and it is last in both,
-which is equally consistent with loop-driving simply being the harder test with
-the same ordering underneath. Running gpt-oss-20b and Qwen3-Coder-30B through
-the tool loop would settle it: they are 23 points apart on code, and if that
-gap fails to survive into the loop table the axes are genuinely separate. Each
-would need both protocols run, for the reason given under *Read such a pair as
-a diagnostic*, and the inversion would have to be large — four episodes resolve
-less than twelve tasks do. Until then, keep the two tables apart because one
-may be measuring a strictly harder thing, not because they are known to
-disagree.
+between the two tables. **That test has now been run, and there is no
+inversion.**
+
+gpt-oss-20b and Qwen3-Coder-30B are 23 points apart on code. Put through the
+tool loop, both protocols each, they **tie**:
+
+| model | code pass@1 | asks the right question |
+|---|---|---|
+| gpt-oss-20b-MXFP4 | 81% | 75% |
+| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M | 58% | 75% |
+| qwen2.5-coder-1.5b-instruct-q4_k_m | 8% | 25% |
+
+No comparable pair disagrees, and every loop score sits at or below its code
+score. That is what you would see if driving a loop required everything writing
+code requires *and more* — not something orthogonal to it.
+
+Two qualifications, both weakening rather than strengthening that reading. A
+tie is not an ordering: a 23-point code gap produced no separation at all, so
+what this establishes is that the suite cannot *discriminate* between these two
+models, not that their loop ability is equal. And the reason it cannot is a
+ceiling — `premise` has never been passed by anything, so the effective top
+score is 3 of 4 and both models are pinned against it. A fifth episode that a
+good model can actually solve might separate them.
+
+What did separate them is not in the scored column. The 30B sprang the shape
+trap and recovered from it, reached for more tools (6.8 per episode against
+5.1), repeated no call, and never once claimed a number its own evidence did
+not return, where gpt-oss did that three times. Those are diagnostics, not the
+score, and they were read *after* the scores tied — so they are a reason to
+build a sharper episode, not a result.
 
 That comparison ended up separating the tiers on four things, none of which was
 knowledge or code quality:
@@ -308,6 +327,32 @@ prompt describing the tools, which is itself a burden on a small model. On the
 Fixing the plumbing did not make it able to do the job, which is the more
 useful thing to learn.
 
+**The text protocol can cost a model its initiative.** On the 30B the mechanics
+are fine under both protocols — 100% `operates tools` either way — and the
+`dictionary` episode still flips completely:
+
+| protocol | `dictionary` solved | document opened |
+|---|---|---|
+| native | 3/3 | 3/3 |
+| text | 0/3 | 0/3 |
+
+Same weights, same episode, same temperature. The only thing that changed is
+where the tools were described, and the column that moved is the one this suite
+exists to measure. Do not read a text-protocol row as a weaker measurement of
+the same thing; it is a measurement of something else.
+
+**`gpt-oss-20b-MXFP4-textproto` is a harness artifact, not a result.** Its 0%
+is `bench/client.py` reading `message.content` and finding an empty string:
+gpt-oss answers in the harmony *analysis* channel, which llama-server returns
+as a separate `reasoning_content` field, and the reply is discarded unread.
+Probed directly, that field holds the model working the episode out correctly
+-- naming `count_rows`, its arguments, then `record_finding` and `finish` --
+while `content` is `''` and the tool-call field is empty. The row is left in
+`results/REPORT.md` because results are the record, but it measures this
+harness against this model's output format and nothing about driving a loop.
+Its auto-generated note ("ended with prose instead of a tool call") is the
+generic `no_call` wording and is wrong here: there was no prose.
+
 ### What the tool loop does not measure
 
 **It is not a measure of judgment in general.** Four episodes on one small
@@ -322,12 +367,14 @@ today the defence is that the file is obscure, which is not much of one.
 **Passing the floor says little.** `operates tools` at 100% means the model can
 hold a fork. Everything interesting is in the last two columns.
 
-**No ceiling has been established.** `selfcheck` proves each episode is
-*mechanically* solvable — a scripted agent making the right calls scores it —
-but that is a weaker claim than "a competent model would solve it". Until a
-model known to be capable has run this suite and scored well, a 0% could in
-principle be an episode's fault rather than a model's. Treat a low score as a
-reason to open the transcript, which is what the transcripts are for.
+**No ceiling has been established on `premise`.** `selfcheck` proves each
+episode is *mechanically* solvable — a scripted agent making the right calls
+scores it — but that is a weaker claim than "a competent model would solve it".
+Three of the four are now past that bar: gpt-oss-20b and Qwen3-Coder-30B each
+cleared `basics`, `shapes` and `dictionary` on all three attempts. `premise`
+has never been solved by any model, so for that one episode a 0% could still in
+principle be the episode's fault rather than the model's. Treat a low score as
+a reason to open the transcript, which is what the transcripts are for.
 
 ### Adding an episode
 

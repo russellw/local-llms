@@ -8,10 +8,11 @@ respectably on it and still be useless driving an agent.
 This half asks whether a model can operate an instrument: choose among tools,
 recover when one refuses, go and find information nobody pushed at it, and stop
 when it is done. A good code score does not carry over -- it is a bar a model
-can clear and still score zero here. Whether the two orderings can actually
-disagree, rather than this simply being the harder test, is open: it would take
-a model that codes worse than another and drives the loop better, and no such
-pair has been run. Keep the scores apart until one has.
+can clear and still score zero here. It does not, on the evidence, run the
+other way either: gpt-oss-20b and Qwen3-Coder-30B are 23 code points apart and
+tie at 75% here, so nothing yet shows the two orderings disagreeing. Keep the
+scores apart because this is the harder test, not because they are known to
+rank models differently.
 """
 
 from .episodes import EPISODES, Episode, load_episodes

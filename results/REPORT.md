@@ -38,10 +38,14 @@ them as a direction to investigate rather than a measurement.
 
 ## Operating an agent loop
 
-| Model                               | operates tools | not confused by shapes | asks the right question | seeks out information | steps |
-|-------------------------------------|----------------|------------------------|-------------------------|-----------------------|-------|
-| qwen2.5-coder-1.5b-instruct-q4_k_m  | 0%             | -                      | 25%                     | 0%                    | 35%   |
-| qwen2.5-coder-1.5b-q4_k_m-textproto | 42%            | 67%                    | 8%                      | 0%                    | 50%   |
+| Model                                         | operates tools | not confused by shapes | asks the right question | seeks out information | steps |
+|-----------------------------------------------|----------------|------------------------|-------------------------|-----------------------|-------|
+| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M           | 100%           | 100%                   | 75%                     | 50%                   | 67%   |
+| gpt-oss-20b-MXFP4                             | 100%           | -                      | 75%                     | 50%                   | 59%   |
+| Qwen3-Coder-30B-A3B-Instruct-Q4_K_M-textproto | 100%           | -                      | 50%                     | 0%                    | 70%   |
+| qwen2.5-coder-1.5b-instruct-q4_k_m            | 0%             | -                      | 25%                     | 0%                    | 35%   |
+| qwen2.5-coder-1.5b-q4_k_m-textproto           | 42%            | 67%                    | 8%                      | 0%                    | 50%   |
+| gpt-oss-20b-MXFP4-textproto                   | 0%             | -                      | 0%                      | 0%                    | 22%   |
 
 ### Reading these numbers
 
@@ -71,5 +75,9 @@ show.
 model that knew when it was done; high with a low score is one that wandered
 until it was stopped.
 
+**Qwen3-Coder-30B-A3B-Instruct-Q4_K_M** (native tool calls) -- **3 attempt(s) recorded the wrong-premise answer** -- a verified finding that answers a question nobody asked; re-running the evidence cannot catch this; 100% of episodes ended voluntarily; 6.8 distinct tools per episode; never solved: premise
+**gpt-oss-20b-MXFP4** (native tool calls) -- **3 attempt(s) recorded the wrong-premise answer** -- a verified finding that answers a question nobody asked; re-running the evidence cannot catch this; 3 finding(s) rejected for claiming a number their own evidence did not return; 100% of episodes ended voluntarily; 5.1 distinct tools per episode; never solved: premise
+**Qwen3-Coder-30B-A3B-Instruct-Q4_K_M-textproto** (text tool calls) -- **3 attempt(s) recorded the wrong-premise answer** -- a verified finding that answers a question nobody asked; re-running the evidence cannot catch this; 3 call(s) repeated a call already made; 6 finding(s) rejected for claiming a number their own evidence did not return; 92% of episodes ended voluntarily; 5.2 distinct tools per episode; never solved: dictionary, premise
 **qwen2.5-coder-1.5b-instruct-q4_k_m** (native tool calls) -- **1 attempt(s) recorded the wrong-premise answer** -- a verified finding that answers a question nobody asked; re-running the evidence cannot catch this; 100% of calls were malformed or named no tool (39 written in the reply text rather than as a tool call); 8 call(s) repeated a call already made; 10 finding(s) rejected for claiming a number their own evidence did not return; 92% of episodes ended voluntarily; 2.5 distinct tools per episode; never solved: basics, dictionary, premise
 **qwen2.5-coder-1.5b-q4_k_m-textproto** (text tool calls) -- 1 episode(s) hit the shape guard and never adapted; 11% of calls were malformed or named no tool (6 written in the reply text rather than as a tool call); 37% of calls were refused by a tool; 14 call(s) repeated a call already made; 1 finding(s) rejected for claiming a number their own evidence did not return; 83% of episodes ended voluntarily; 3.6 distinct tools per episode; never solved: dictionary, premise, shapes
+**gpt-oss-20b-MXFP4-textproto** (text tool calls) -- 12 episode(s) ended with prose instead of a tool call; 0% of episodes ended voluntarily; 0.0 distinct tools per episode; never solved: basics, dictionary, premise, shapes
