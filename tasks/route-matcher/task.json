@@ -4,7 +4,7 @@
   "budget": 26,
   "difficulty": "hard",
   "test_timeout": 60,
-  "max_tokens": 1600,
+  "max_tokens": 3000,
   "spec_file": "SPEC.md",
-  "trap": "matching in registration order instead of by segment specificity"
+  "trap": "matching in registration order instead of by segment specificity; the fix is one contiguous rewrite of match(), which costs double through replace_in_file"
 }

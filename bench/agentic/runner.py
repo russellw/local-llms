@@ -155,6 +155,13 @@ def _render(task: Task, res, transcript: list[dict]) -> str:
         if (t.get("text") or "").strip():
             lines.append("")
             lines.append(t["text"].strip())
+        # A step whose call was cut off has results and no calls. Without this
+        # the transcript shows a silent gap, which is the opposite of what the
+        # transcript is for.
+        if not t["calls"]:
+            for r in t.get("results") or []:
+                lines.append("")
+                lines.append(f"    {r}")
         for c, r in zip(t["calls"], list(t["results"]) + [""] * len(t["calls"])):
             lines.append("")
             lines.append(f"    -> {c['tool']}({json.dumps(c['args'])})")
