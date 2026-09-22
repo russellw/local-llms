@@ -25,9 +25,9 @@ from dataclasses import dataclass, field
 
 from ..sandbox import _limits
 
-MAX_READ_BYTES = 24_000
+MAX_READ_BYTES = 8_000
 MAX_WRITE_BYTES = 60_000
-MAX_TEST_OUTPUT = 4_000
+MAX_TEST_OUTPUT = 2_500
 
 TOOL_SPECS: list[dict] = [
     {

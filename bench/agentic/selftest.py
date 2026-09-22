@@ -16,6 +16,7 @@ announces success without fixing anything must not.
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 
@@ -220,6 +221,44 @@ def run() -> list[str]:
         fails.append("scorer: calls written in the reply text were not all counted as malformed")
     if res.operates_tools:
         fails.append("scorer: an agent whose every call was out of band passed the operates floor")
+
+    # History compaction must shrink the conversation without orphaning a tool
+    # reply from the call it answers -- that would make the next request
+    # malformed and end the attempt on a server error.
+    from .loop import _compact, _est_tokens
+
+    conv = [{"role": "system", "content": "s"}, {"role": "user", "content": "b"}]
+    for i in range(12):
+        conv.append({
+            "role": "assistant", "content": "",
+            "tool_calls": [{"id": f"c{i}", "type": "function",
+                            "function": {"name": "read_file",
+                                         "arguments": json.dumps({"path": f"f{i}.py"})}}],
+        })
+        conv.append({"role": "tool", "tool_call_id": f"c{i}", "content": "X" * 2000})
+    packed = _compact(conv)
+    if _est_tokens(packed) >= _est_tokens(conv) / 2:
+        fails.append("compaction: did not meaningfully shrink the history")
+    seen = set()
+    for m in packed:
+        for tc in m.get("tool_calls") or []:
+            seen.add(tc["id"])
+        if m.get("role") == "tool" and m.get("tool_call_id") not in seen:
+            fails.append("compaction: orphaned a tool reply from its call")
+            break
+    if packed[0].get("role") != "system" or packed[1].get("content") != "b":
+        fails.append("compaction: dropped the system prompt or the task brief")
+    # The kept history must resume on an assistant turn whatever the shape of
+    # the conversation -- checking for orphans alone passes by luck when the
+    # roles happen to alternate evenly.
+    if len(packed) > 3 and packed[3].get("role") != "assistant":
+        fails.append(
+            "compaction: resumed on a "
+            f"{packed[3].get('role')!r} turn instead of an assistant turn"
+        )
+    short = conv[:5]
+    if len(_compact(short)) != len(short):
+        fails.append("compaction: rewrote a conversation that was already short")
 
     # A reasoning model that answers only in the analysis channel is heard.
     analysis = [

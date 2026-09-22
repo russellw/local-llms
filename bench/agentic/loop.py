@@ -28,6 +28,84 @@ from .tools import TOOL_SPECS, TOOL_NAMES, TEXT_EXAMPLE, ToolError, Workspace
 
 MAX_CALLS_PER_STEP = 2
 
+# Context management. A long task otherwise replays every file it has read and
+# every edit it has sent, on every turn, and the conversation saturates the
+# window. That is not merely untidy on this hardware: generation speed collapses
+# with sequence length -- Qwen3-Coder-30B measured 5.9 tok/s cold, 1.2 mid-task
+# and 0.45 at a full 16k window, a 13x penalty that turned a task into an
+# eight-hour timeout.
+#
+# So the history is compacted the way a real agent compacts it: once the
+# estimate crosses the threshold, everything before the last few exchanges is
+# replaced by a note saying what was done. The model can re-read anything it
+# still needs, which costs a step and is far cheaper than carrying it forever.
+#
+# This is deliberately rare rather than continuous. Every message before the
+# edit point has to be re-processed by the server afterwards -- the cached
+# prefix is gone -- so compaction pays for itself only by being infrequent and
+# aggressive: cutting to a short history makes that re-processing cheap and
+# buys back several turns of fast generation.
+COMPACT_AT_TOKENS = 7000
+KEEP_RECENT = 6
+
+
+def _est_tokens(messages: list[dict]) -> int:
+    """Rough size of the conversation. Four chars a token is close enough."""
+    n = 0
+    for m in messages:
+        n += len(m.get("content") or "") // 4
+        for tc in m.get("tool_calls") or []:
+            n += len(json.dumps(tc.get("function") or {}, default=str)) // 4
+        n += 4  # role and framing
+    return n
+
+
+def _describe_call(m: dict) -> str:
+    out = []
+    for tc in m.get("tool_calls") or []:
+        fn = tc.get("function") or {}
+        name = fn.get("name") or "?"
+        args = fn.get("arguments")
+        path = ""
+        if isinstance(args, str):
+            try:
+                path = (json.loads(args) or {}).get("path", "")
+            except (json.JSONDecodeError, AttributeError):
+                path = ""
+        elif isinstance(args, dict):
+            path = args.get("path", "")
+        out.append(f"{name}({path})" if path else f"{name}()")
+    return ", ".join(out)
+
+
+def _compact(messages: list[dict]) -> list[dict]:
+    """Replace all but the recent exchanges with a note on what was done.
+
+    The split must land on an assistant message: a `tool` reply whose matching
+    tool call has been cut away is a malformed request, and the server rejects
+    the whole turn.
+    """
+    head, tail = messages[:2], messages[2:]
+    if len(tail) <= KEEP_RECENT:
+        return messages
+    cut = None
+    for i in range(len(tail) - KEEP_RECENT, -1, -1):
+        if tail[i].get("role") == "assistant":
+            cut = i
+            break
+    if cut is None or cut == 0:
+        return messages
+
+    did = [d for d in (_describe_call(m) for m in tail[:cut]) if d]
+    note = (
+        "[Earlier steps have been summarised to save room. What you did so "
+        "far, in order: "
+        + "; ".join(did)
+        + ". The full text of those results is no longer shown -- re-read any "
+        "file you still need.]"
+    )
+    return head + [{"role": "user", "content": note}] + tail[cut:]
+
 _NUDGE = (
     "That was not a tool call. Reply with a tool call and nothing else, using "
     "the form you were given."
@@ -92,6 +170,7 @@ class TaskResult:
     calls_refused: int = 0
     calls_repeated: int = 0
     calls_truncated: int = 0
+    compactions: int = 0
     distinct_tools: int = 0
     tools_used: list[str] = field(default_factory=list)
 
@@ -179,6 +258,11 @@ def run_task(
     try:
         for step in range(1, task.budget + 1):
             res.steps = step
+            if _est_tokens(messages) > COMPACT_AT_TOKENS:
+                shorter = _compact(messages)
+                if len(shorter) < len(messages):
+                    messages = shorter
+                    res.compactions += 1
             comp = client.complete(
                 messages,
                 temperature=temperature,

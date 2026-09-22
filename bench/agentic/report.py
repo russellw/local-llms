@@ -69,6 +69,7 @@ def summarise(meta: dict, rows: list[dict]) -> dict:
         "out_of_band": sum(r.get("calls_malformed", 0) for r in rows),
         "repeats": sum(r.get("calls_repeated", 0) for r in rows),
         "truncated": sum(r.get("calls_truncated", 0) for r in rows),
+        "compactions": sum(r.get("compactions", 0) for r in rows),
         "no_call": sum(1 for r in rows if r.get("stopped") == "no_call"),
         "api_errors": sum(1 for r in rows if r.get("stopped") == "error"),
         "voluntary_stop": len(finished) / len(rows),
@@ -171,6 +172,11 @@ def render(summaries: list[dict]) -> str:
             )
         if s["edit_failures"]:
             notes.append(f"{s['edit_failures']} edit(s) were refused")
+        if s.get("compactions"):
+            notes.append(
+                f"{s['compactions']} history compaction(s) -- conversations "
+                "outgrew the window and older results were summarised"
+            )
         notes.append(f"{s['edits']:.1f} edits and {s['test_runs']:.1f} test runs per attempt")
         if s["never_solved"]:
             notes.append("never solved: " + ", ".join(s["never_solved"]))
