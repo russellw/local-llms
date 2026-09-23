@@ -222,6 +222,35 @@ def run() -> list[str]:
     if res.operates_tools:
         fails.append("scorer: an agent whose every call was out of band passed the operates floor")
 
+    # Protocol detection must answer from the template, never from a hiccup.
+    from .runner import detect_protocol
+
+    class _FakeServer:
+        def __init__(self, rendered, err=None):
+            self._rendered, self._err = rendered, err
+
+        def render(self, messages, tools):
+            return self._rendered
+
+        def complete(self, messages, **kw):
+            return Completion(text="ok", wall_s=0.0, error=self._err)
+
+    sentinel = "... zz_probe_tool_rendering ..."
+    for label, server, want in (
+        ("a template that renders tools", _FakeServer(sentinel), "native"),
+        ("a template that drops tools", _FakeServer("nothing here"), "text"),
+        ("a server that rejects the parameter",
+         _FakeServer(sentinel, "HTTP 400: no tools"), "text"),
+        # A busy server is not a statement about tool support. Downgrading on
+        # it would run a capable model on the wrong protocol and mis-score it.
+        ("a probe that timed out",
+         _FakeServer(sentinel, "TimeoutError: timed out"), "native"),
+        ("a server with no /apply-template", _FakeServer(None), "native"),
+    ):
+        got = detect_protocol(server)
+        if got != want:
+            fails.append(f"detect_protocol: {label} -> {got}, expected {want}")
+
     # History compaction must shrink the conversation without orphaning a tool
     # reply from the call it answers -- that would make the next request
     # malformed and end the attempt on a server error.

@@ -48,12 +48,27 @@ def detect_protocol(client: ChatClient) -> str:
     has to appear in the rendered prompt.
     """
     probe = [{"role": "user", "content": "Say ok."}]
-    comp = client.complete(probe, max_tokens=8, tools=toolcall.openai_tools(TOOL_SPECS))
-    if comp.error:
-        return "text"
+
+    # Cheapest and most decisive first: rendering generates no tokens, so it
+    # cannot time out behind a slow queue the way the check below can.
     rendered = client.render(probe, _SENTINEL_TOOL)
     if rendered is not None and "zz_probe_tool_rendering" not in rendered:
         return "text"
+
+    comp = client.complete(probe, max_tokens=8, tools=toolcall.openai_tools(TOOL_SPECS))
+    if comp.error:
+        # Only an answer from the server is evidence about tool support. A
+        # timeout or a dropped connection says the server was busy, and
+        # downgrading on it would quietly run a capable model on the wrong
+        # protocol and mis-score it -- the exact failure this function exists
+        # to prevent. Observed for real: a 300s probe queued behind a 14-minute
+        # generation came back "text" for a template that renders tools fine.
+        if comp.error.startswith("HTTP "):
+            return "text"
+        print(
+            f"note: could not confirm tool support ({comp.error}); assuming the "
+            "server accepts it. Pass --protocol explicitly to override."
+        )
     return "native"
 
 
