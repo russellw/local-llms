@@ -21,17 +21,40 @@ from .tools import TOOL_SPECS
 RESULTS_DIR = Path(__file__).resolve().parent.parent.parent / "results"
 
 
-def detect_protocol(client: ChatClient) -> str:
-    """Does this server accept the `tools` parameter at all?
+_SENTINEL_TOOL = [{
+    "type": "function",
+    "function": {
+        "name": "zz_probe_tool_rendering",
+        "description": "probe",
+        "parameters": {"type": "object", "properties": {}, "required": []},
+    },
+}]
 
-    A test of the *server*, not the model: it asks whether the request is
-    accepted, not whether the reply contains a tool call. A model that is
-    offered tools and does not use them is the thing being measured, and must
-    not be quietly routed onto an easier protocol.
+
+def detect_protocol(client: ChatClient) -> str:
+    """Can this server actually put tools in front of the model?
+
+    Two questions, both about the *server*, never about the model: a model that
+    is offered tools and ignores them is the thing being measured and must not
+    be quietly routed onto an easier protocol.
+
+    **Is the parameter accepted?** Some servers reject it outright.
+
+    **Does the chat template render it?** This one is not obvious and it cost a
+    model an entire run. Devstral's GGUF ships a template that accepts the
+    request, honours a system message, and silently discards `tools` -- so the
+    model was told to call tools it had never been shown, improvised shell
+    commands, and scored zero. Accepting the request proves nothing; the tool
+    has to appear in the rendered prompt.
     """
     probe = [{"role": "user", "content": "Say ok."}]
     comp = client.complete(probe, max_tokens=8, tools=toolcall.openai_tools(TOOL_SPECS))
-    return "text" if comp.error else "native"
+    if comp.error:
+        return "text"
+    rendered = client.render(probe, _SENTINEL_TOOL)
+    if rendered is not None and "zz_probe_tool_rendering" not in rendered:
+        return "text"
+    return "native"
 
 
 def _done_keys(path: Path) -> set:

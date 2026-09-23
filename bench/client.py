@@ -93,6 +93,22 @@ class ChatClient:
             messages, temperature=temperature, max_tokens=max_tokens, seed=seed
         )
 
+    def render(self, messages: list[dict], tools: list[dict] | None = None) -> str | None:
+        """The prompt this server would build, without generating anything.
+
+        llama.cpp exposes /apply-template. Other servers do not, and None means
+        "could not tell" rather than "renders nothing".
+        """
+        payload: dict = {"messages": messages}
+        if tools:
+            payload["tools"] = tools
+        try:
+            data = self._post("/apply-template", payload)
+        except Exception:
+            return None
+        prompt = data.get("prompt")
+        return prompt if isinstance(prompt, str) else None
+
     def complete(
         self,
         messages: list[dict],
