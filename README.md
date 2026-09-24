@@ -183,12 +183,60 @@ nothing but a machine with similar memory bandwidth.
 repo, so they are not in any model's training data today. Nothing stops that
 changing, and the defence is that they are cheap to replace.
 
-**No ceiling has been established.** `selfcheck` proves each task is solvable
-by applying its own reference fix, which is a weaker claim than "a competent
-model would solve it". Until a model known to be capable has scored well here,
-a 0% could in principle be a task's fault rather than a model's. Treat a low
-score as a reason to open the transcript, which is what the transcripts are
-for.
+**The ceiling is established, and it is too low.** Every task has been solved
+by a real model, not merely by its own reference fix: gpt-oss-20b solved all
+four, on all three attempts each. So a 0% here is the model's, and the
+transcripts will say why.
+
+The cost of that is the suite cannot rank anything at or above gpt-oss-20b.
+100% is a ceiling, not a score, and a harder fifth task is the obvious next
+thing to add.
+
+## What the first run found
+
+Four models, on the machine described above. `results/REPORT.md` has the full
+table and the diagnostics; this is the part worth knowing.
+
+| Model | solved | operates tools | reads the spec | false done | tok/s |
+|---|---|---|---|---|---|
+| gpt-oss-20b-MXFP4 | **100%** | 100% | 83% | 0 | 1.8 |
+| Qwen3-Coder-30B-A3B | 58% | 100% | 75% | 4 | 1.2 |
+| Devstral-Small-2507 | 50% | 100% | 25% | 0 | 0.6 |
+| Qwen2.5-Coder-32B | 25% | 0% | 0% | 0 | 0.3 |
+
+The MoE models were run three times per task and the dense ones once, because
+at 0.3 tok/s a single pass is a day. A one-attempt row resolves less; treat the
+gap between 58% and 50% as nothing.
+
+**The ranking is the least interesting thing here.** The three models that fail
+fail in three unrelated ways, and a single score would have hidden all of it:
+
+- **Qwen3-Coder-30B is competent and over-confident.** It fixes most of a task
+  and then stops: four attempts called `finish` with the suite still red, twice
+  leaving `retry-policy` at 20 of 22 passing. It is the only model that did
+  this, and it is the failure that costs most in real use, because nothing
+  downstream can catch it -- the code is plausible, the model is certain, and
+  the tests were never run again.
+- **Devstral-Small-24B spins.** On `retry-policy` it made one edit at step 6
+  and then ran the tests twenty times in a row until the budget stopped it,
+  never editing again. 10.3 hours to change one line. Its other failure,
+  `route-matcher`, is the opposite shape: 14 edits and still short.
+- **Qwen2.5-Coder-32B cannot quote code.** 17 refused edits in four attempts,
+  against zero for Qwen3 across twelve. On `route-matcher` it made 13
+  `replace_in_file` calls and landed none, drifting from the file's text --
+  `if` where the source says `elif`, sixteen spaces where it has twelve. It
+  also wrote every one of its 75 tool calls into the reply text rather than the
+  tool-call field, which is what the 0% floor records.
+
+**Reading the spec tracks the score better than anything else.** The models
+that went and opened the file nobody pointed them at are the models that
+solved things. The one that never opened it solved one task in four.
+
+**Mixture-of-experts is not a nice-to-have on this hardware.** The two dense
+models read 14 and 20 GB per token against the MoE pair's ~2, and that is the
+whole difference between 1.8 tok/s and 0.3. It compounds over a twenty-turn
+task: gpt-oss finished its twelve attempts in 6.5 hours, Qwen2.5-Coder-32B took
+16 hours for four.
 
 ## Reading the results
 
