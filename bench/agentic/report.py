@@ -29,6 +29,32 @@ def load_run(path: Path) -> tuple[dict, list[dict]]:
     return meta, rows
 
 
+def _operates(r: dict, protocol: str) -> bool:
+    """The tool-operating floor, recomputed here so every row uses one rule.
+
+    Under the native protocol a malformed call means the model wrote its call
+    into the reply text instead of the tool-call field: a real channel failure,
+    because a strict agent client reads the field and sees nothing.
+
+    Under the text protocol there is no field to miss -- the reply text *is*
+    the channel -- and `malformed` there mostly means the JSON was not fenced
+    the way the prompt asked. That is a formatting nit, not an inability to
+    operate the tools, and counting it the same way put a model at 0% on this
+    floor in the same run it solved two tasks outright. So the in-channel test
+    applies only where there is a channel.
+    """
+    total = r.get("calls_total", 0)
+    if total < 3:
+        return False
+    answered = (total - r.get("calls_refused", 0)) / total
+    if answered < 0.8 or r.get("distinct_tools", 0) < 3:
+        return False
+    if protocol == "text":
+        return True
+    in_channel = (total - r.get("calls_malformed", 0)) / total
+    return in_channel >= 0.8
+
+
 def _mean(vals) -> float:
     vals = list(vals)
     return sum(1 for v in vals if v) / len(vals) if vals else 0.0
@@ -54,7 +80,7 @@ def summarise(meta: dict, rows: list[dict]) -> dict:
         "n_tasks": len(by_task),
         "solved": _mean(bool(r.get("passed")) for r in rows),
         "solved_any": sum(1 for v in by_task.values() if any(v)) / len(by_task),
-        "operates": _mean(bool(r.get("operates_tools")) for r in rows),
+        "operates": _mean(_operates(r, meta.get("protocol", "native")) for r in rows),
         "verifies": _mean(r.get("test_runs", 0) > 0 for r in rows),
         "reads_spec": _mean(bool(r.get("read_spec")) for r in spec_rows) if spec_rows else None,
         "false_done": sum(1 for r in rows if r.get("finished_unverified")),
@@ -166,10 +192,18 @@ def render(summaries: list[dict]) -> str:
         if s["regressed"]:
             notes.append(f"{s['regressed']} attempt(s) had it green and then broke it")
         if s["call_error_rate"] > 0.05:
-            notes.append(
-                f"{_pct(s['call_error_rate'])} of calls were malformed or named no "
-                f"tool ({s['out_of_band']} written in the reply text)"
-            )
+            if s["protocol"] == "text":
+                notes.append(
+                    f"{_pct(s['call_error_rate'])} of calls were not fenced as "
+                    "the prompt asked (parsed anyway; a formatting deviation, "
+                    "not a channel failure)"
+                )
+            else:
+                notes.append(
+                    f"{_pct(s['call_error_rate'])} of calls were malformed or named no "
+                    f"tool ({s['out_of_band']} written in the reply text rather "
+                    "than as a tool call)"
+                )
         if s["no_call"]:
             notes.append(f"{s['no_call']} attempt(s) ended with prose instead of a call")
         if s["api_errors"]:
