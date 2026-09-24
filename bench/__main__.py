@@ -24,13 +24,11 @@ def cmd_run(args) -> int:
 
     mode = args.protocol
     if mode == "auto":
+        # detect_protocol explains its own reasoning: "rejected the parameter"
+        # and "accepted it and threw the tools away" are different diagnoses
+        # pointing at different fixes, and saying the wrong one sends you
+        # hunting the wrong problem.
         mode = detect_protocol(client)
-        if mode == "text":
-            print(
-                "note: this server rejected the `tools` parameter, so tool calls "
-                "will be asked for as JSON in the reply instead. llama-server "
-                "needs --jinja for native tool calls."
-            )
 
     # Greedy decoding is deterministic, so repeated attempts would replay the
     # identical run and burn hours proving nothing.

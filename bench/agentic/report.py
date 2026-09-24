@@ -117,12 +117,23 @@ def render(summaries: list[dict]) -> str:
         )
 
     n_tasks = max(s["n_tasks"] for s in summaries)
-    reps = max(1, max(s["n"] for s in summaries) // max(1, n_tasks))
+    reps = sorted({max(1, s["n"] // max(1, s["n_tasks"])) for s in summaries})
+    # Models are not all run the same number of times -- a model at 0.3 tok/s
+    # costs a day for a single pass -- so say so rather than quoting the
+    # largest and letting it read as though it applied to every row.
+    if len(reps) == 1:
+        sample = f"{n_tasks} task(s) x {reps[0]} attempt(s) per model."
+    else:
+        sample = (
+            f"{n_tasks} task(s); attempts per model vary "
+            f"({reps[0]}-{reps[-1]}), so a row with fewer attempts resolves "
+            "less. Per-model counts are in the notes below."
+        )
     lines += [
         "",
         "### Reading these numbers",
         "",
-        f"Sample: {n_tasks} task(s) x {reps} attempt(s) per model.",
+        f"Sample: {sample}",
         "",
         "**solved** is the score, and it is the only column that is. It is the",
         "fraction of attempts where the hidden test suite passes against the",
@@ -177,7 +188,10 @@ def render(summaries: list[dict]) -> str:
                 f"{s['compactions']} history compaction(s) -- conversations "
                 "outgrew the window and older results were summarised"
             )
-        notes.append(f"{s['edits']:.1f} edits and {s['test_runs']:.1f} test runs per attempt")
+        notes.append(
+            f"{s['n']} attempt(s) over {s['n_tasks']} task(s); "
+            f"{s['edits']:.1f} edits and {s['test_runs']:.1f} test runs per attempt"
+        )
         if s["never_solved"]:
             notes.append("never solved: " + ", ".join(s["never_solved"]))
         lines.append(f"**{s['model']}** ({s['protocol']} tool calls) -- " + "; ".join(notes))

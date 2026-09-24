@@ -53,6 +53,12 @@ def detect_protocol(client: ChatClient) -> str:
     # cannot time out behind a slow queue the way the check below can.
     rendered = client.render(probe, _SENTINEL_TOOL)
     if rendered is not None and "zz_probe_tool_rendering" not in rendered:
+        print(
+            "note: this model's chat template accepts the request and then "
+            "discards the `tools` parameter -- the tools never reach the "
+            "model. Falling back to describing them in the system prompt. "
+            "This is a property of the GGUF's template, not of the server."
+        )
         return "text"
 
     comp = client.complete(probe, max_tokens=8, tools=toolcall.openai_tools(TOOL_SPECS))
@@ -64,6 +70,11 @@ def detect_protocol(client: ChatClient) -> str:
         # to prevent. Observed for real: a 300s probe queued behind a 14-minute
         # generation came back "text" for a template that renders tools fine.
         if comp.error.startswith("HTTP "):
+            print(
+                f"note: this server rejected the `tools` parameter "
+                f"({comp.error[:80]}); asking for tool calls as JSON in the "
+                "reply instead. llama-server needs --jinja for native tool calls."
+            )
             return "text"
         print(
             f"note: could not confirm tool support ({comp.error}); assuming the "
