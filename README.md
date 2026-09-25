@@ -124,7 +124,7 @@ task, the workspace or the scorer. It checks three things:
 
 ## The tasks
 
-Four, all deliberately hard. A task that a 7B solves on the first try tells you
+Five, all deliberately hard. A task that a 7B solves on the first try tells you
 nothing you did not already know.
 
 | Task | The work | The trap |
@@ -133,6 +133,16 @@ nothing you did not already know.
 | `route-matcher` | URL routing with parameter and wildcard segments | matching in registration order, when the spec decides by segment specificity |
 | `log-compactor` | one-pass compaction of a record stream | fixing the logic and leaving the per-record scan, so it stays quadratic and the suite times out |
 | `retry-policy` | backoff, jitter, throttling and an elapsed budget | fixing the arithmetic while the classifier still calls `429` fatal, so the throttling branch is never reached |
+| `crash-recovery` | rebuilding a store from a checkpoint and a damaged journal | skipping a corrupt record and carrying on, where the spec says replay stops there and discards everything after |
+
+`crash-recovery` is the hardest and was added because gpt-oss-20b solved the
+other four outright. Its three bugs are spread over three files and none of
+them is local to the symptom: replay is off by one against the checkpoint's own
+sequence number, recovery aliases the checkpoint's state instead of copying it
+(so recovering twice gives different answers), and a corrupt record is skipped
+rather than stopping the replay. Fixing everything visible in the code gets to
+**18 of 20** and still fails -- the last two need the rule that exists only in
+`SPEC.md`.
 
 Each has several interacting bugs rather than one, because a single planted bug
 rewards pattern-matching and a spec clause nobody mentioned rewards reading.
@@ -160,7 +170,7 @@ model the assertion it is supposed to satisfy. Then run
 
 Stated plainly, because these are deliberate boundaries rather than oversights:
 
-**Four tasks is a small sample.** It resolves large differences between models
+**Five tasks is a small sample.** It resolves large differences between models
 and nothing finer. Attempts at the same task are correlated, so the effective
 sample size is closer to the number of *tasks* than the number of attempts.
 
@@ -183,19 +193,26 @@ nothing but a machine with similar memory bandwidth.
 repo, so they are not in any model's training data today. Nothing stops that
 changing, and the defence is that they are cheap to replace.
 
-**The ceiling is established, and it is too low.** Every task has been solved
-by a real model, not merely by its own reference fix: gpt-oss-20b solved all
-four, on all three attempts each. So a 0% here is the model's, and the
+**The ceiling is established for four of the five.** `inventory-ledger`,
+`route-matcher`, `log-compactor` and `retry-policy` have each been solved by a
+real model rather than merely by their own reference fix -- gpt-oss-20b solved
+all four on all three attempts. A 0% on those is the model's, and the
 transcripts will say why.
 
-The cost of that is the suite cannot rank anything at or above gpt-oss-20b.
-100% is a ceiling, not a score, and a harder fifth task is the obvious next
-thing to add.
+`crash-recovery` was added afterwards, precisely because that 100% meant the
+suite could not rank anything at or above gpt-oss-20b. It is calibrated against
+partial fixes rather than against a model, so its difficulty is argued and not
+yet demonstrated: **no model has attempted it.** Until one does, treat a zero
+there as unexplained rather than damning.
 
 ## What the first run found
 
 Four models, on the machine described above. `results/REPORT.md` has the full
 table and the diagnostics; this is the part worth knowing.
+
+These numbers are over the **first four** tasks. `crash-recovery` was added in
+response to them and no model has run it, so every row below will change when
+they do.
 
 | Model | solved | operates tools | reads the spec | false done | tok/s |
 |---|---|---|---|---|---|

@@ -1,0 +1,10 @@
+{
+  "title": "Crash recovery from a checkpoint and a torn journal",
+  "brief": "The crash-recovery code in this project does not pass its test suite. Find out why and fix it. You can run the tests whenever you like; you cannot read them.",
+  "budget": 30,
+  "difficulty": "hard",
+  "test_timeout": 60,
+  "max_tokens": 3000,
+  "spec_file": "SPEC.md",
+  "trap": "skipping a corrupt record and carrying on, where the spec says replay must stop there"
+}
