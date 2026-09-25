@@ -42,148 +42,148 @@ def policy(frac=0.5, base=1.0, cap=30.0, attempts=5, elapsed_budget=1000.0):
 
 # -- classification -----------------------------------------------------
 
-def server_errors_are_retryable():
+def classification_of_408_and_5xx():
     for s in (408, 500, 502, 503, 504):
         eq(classify(s), RETRYABLE, f"classification of {s}")
 
 
-def too_many_requests_is_throttled():
+def classification_of_429():
     eq(classify(429), THROTTLED, "classification of 429")
 
 
-def other_client_errors_are_fatal():
+def classification_of_other_4xx():
     for s in (400, 401, 403, 404, 422):
         eq(classify(s), FATAL, f"classification of {s}")
 
 
-def success_is_fatal():
+def classification_of_200():
     eq(classify(200), FATAL, "classification of 200")
 
 
-def network_timeout_is_retryable():
+def classification_of_a_timeout_message():
     eq(classify(None, "connection timeout"), RETRYABLE, "classification of a timeout")
 
 
-def network_reset_is_retryable():
+def classification_of_a_reset_message():
     eq(classify(None, "Connection reset by peer"), RETRYABLE, "classification of a reset")
 
 
-def network_hints_are_case_insensitive():
+def classification_of_an_upper_case_message():
     eq(classify(None, "TIMEOUT while reading"), RETRYABLE, "classification of an upper-case timeout")
 
 
-def other_network_errors_are_fatal():
+def classification_of_a_tls_message():
     eq(classify(None, "certificate verify failed"), FATAL, "classification of a TLS failure")
 
 
 # -- backoff ------------------------------------------------------------
 
-def first_retry_ceiling_is_the_base_delay():
+def delay_on_attempt_0():
     p = policy(frac=1.0, base=2.0)
-    eq(p.next_delay(0, 500), 2.0, "delay on attempt 0 with full jitter")
+    eq(p.next_delay(0, 500), 2.0, "delay on attempt 0")
 
 
-def backoff_doubles():
+def delay_on_attempts_1_and_2():
     p = policy(frac=1.0, base=2.0)
     eq(p.next_delay(1, 500), 4.0, "delay on attempt 1")
     eq(p.next_delay(2, 500), 8.0, "delay on attempt 2")
 
 
-def jitter_is_applied_within_the_ceiling():
+def delay_with_a_quarter_jitter():
     p = policy(frac=0.25, base=4.0)
-    eq(p.next_delay(1, 500), 2.0, "quarter jitter of an 8s ceiling")
+    eq(p.next_delay(1, 500), 2.0, "delay on attempt 1")
 
 
-def the_ceiling_is_capped_before_jitter():
+def delay_on_attempt_6_with_a_cap_of_10():
     # Ceiling would be 1 * 2**6 = 64, capped to 10, then jittered by half -> 5.
     # Jittering first and capping after would give min(32, 10) = 10.
     # attempts=10 so the attempt limit is not what is being tested here.
     p = policy(frac=0.5, base=1.0, cap=10.0, attempts=10)
-    eq(p.next_delay(6, 500), 5.0, "half jitter of a ceiling capped at 10")
+    eq(p.next_delay(6, 500), 5.0, "delay on attempt 6")
 
 
 # -- throttling ---------------------------------------------------------
 
-def throttled_waits_exactly_retry_after():
+def delay_for_429_with_retry_after():
     p = policy(frac=0.5, base=1.0)
-    eq(p.next_delay(0, 429, retry_after=7.5), 7.5, "delay for a throttled request")
+    eq(p.next_delay(0, 429, retry_after=7.5), 7.5, "delay for status 429")
 
 
-def throttled_ignores_jitter_entirely():
+def delay_for_429_on_attempt_3():
     p = policy(frac=0.1, base=1.0)
-    eq(p.next_delay(3, 429, retry_after=2.0), 2.0, "delay for a throttled request")
+    eq(p.next_delay(3, 429, retry_after=2.0), 2.0, "delay for status 429")
 
 
-def throttled_is_capped_at_max_delay():
+def delay_for_429_with_a_large_retry_after():
     p = policy(frac=0.5, base=1.0, cap=10.0)
-    eq(p.next_delay(0, 429, retry_after=100.0), 10.0, "capped delay for a throttled request")
+    eq(p.next_delay(0, 429, retry_after=100.0), 10.0, "delay for status 429")
 
 
-def throttled_without_retry_after_falls_back_to_backoff():
+def delay_for_429_without_retry_after():
     p = policy(frac=1.0, base=3.0)
-    eq(p.next_delay(0, 429), 3.0, "delay for a throttled request with no retry_after")
+    eq(p.next_delay(0, 429), 3.0, "delay for status 429")
 
 
 # -- limits -------------------------------------------------------------
 
-def fatal_never_retries():
+def delay_for_404():
     p = policy()
-    eq(p.next_delay(0, 404), None, "delay after a fatal error")
+    eq(p.next_delay(0, 404), None, "delay for status 404")
 
 
-def the_last_permitted_attempt_gets_no_delay():
+def delay_on_attempts_1_and_2_of_3():
     p = policy(frac=0.5, base=1.0, attempts=3)
     if p.next_delay(1, 500) is None:
-        raise AssertionError("attempt 1 of 3 should still produce a delay")
+        raise AssertionError("attempt 1 of 3 returned no delay")
     eq(p.next_delay(2, 500), None, "delay on the last of 3 attempts")
 
 
-def one_attempt_means_no_retry():
+def delay_when_max_attempts_is_1():
     p = policy(attempts=1)
     eq(p.next_delay(0, 500), None, "delay when only one try is permitted")
 
 
-def elapsed_budget_counts_the_pending_delay():
+def delay_with_8_of_10_seconds_spent():
     # 8 already spent, a 4s delay would reach 12, over the 10s budget.
     p = policy(frac=1.0, base=4.0, elapsed_budget=10.0)
-    eq(p.next_delay(0, 500, elapsed=8.0), None, "delay that would overrun the budget")
+    eq(p.next_delay(0, 500, elapsed=8.0), None, "delay with elapsed=8.0")
 
 
-def landing_exactly_on_the_budget_is_allowed():
+def delay_with_6_of_10_seconds_spent():
     p = policy(frac=1.0, base=4.0, elapsed_budget=10.0)
-    eq(p.next_delay(0, 500, elapsed=6.0), 4.0, "delay that lands exactly on the budget")
+    eq(p.next_delay(0, 500, elapsed=6.0), 4.0, "delay with elapsed=6.0")
 
 
-def the_budget_applies_to_throttling_too():
+def delay_for_429_with_5_of_10_seconds_spent():
     p = policy(frac=0.5, base=1.0, elapsed_budget=10.0)
     eq(p.next_delay(0, 429, retry_after=9.0, elapsed=5.0), None,
-       "throttled delay that would overrun the budget")
+       "delay for status 429 with elapsed=5.0")
 
 
 CHECKS = [
-    ("server_errors_are_retryable", server_errors_are_retryable),
-    ("too_many_requests_is_throttled", too_many_requests_is_throttled),
-    ("other_client_errors_are_fatal", other_client_errors_are_fatal),
-    ("success_is_fatal", success_is_fatal),
-    ("network_timeout_is_retryable", network_timeout_is_retryable),
-    ("network_reset_is_retryable", network_reset_is_retryable),
-    ("network_hints_are_case_insensitive", network_hints_are_case_insensitive),
-    ("other_network_errors_are_fatal", other_network_errors_are_fatal),
-    ("first_retry_ceiling_is_the_base_delay", first_retry_ceiling_is_the_base_delay),
-    ("backoff_doubles", backoff_doubles),
-    ("jitter_is_applied_within_the_ceiling", jitter_is_applied_within_the_ceiling),
-    ("the_ceiling_is_capped_before_jitter", the_ceiling_is_capped_before_jitter),
-    ("throttled_waits_exactly_retry_after", throttled_waits_exactly_retry_after),
-    ("throttled_ignores_jitter_entirely", throttled_ignores_jitter_entirely),
-    ("throttled_is_capped_at_max_delay", throttled_is_capped_at_max_delay),
-    ("throttled_without_retry_after_falls_back_to_backoff",
-     throttled_without_retry_after_falls_back_to_backoff),
-    ("fatal_never_retries", fatal_never_retries),
-    ("the_last_permitted_attempt_gets_no_delay", the_last_permitted_attempt_gets_no_delay),
-    ("one_attempt_means_no_retry", one_attempt_means_no_retry),
-    ("elapsed_budget_counts_the_pending_delay", elapsed_budget_counts_the_pending_delay),
-    ("landing_exactly_on_the_budget_is_allowed", landing_exactly_on_the_budget_is_allowed),
-    ("the_budget_applies_to_throttling_too", the_budget_applies_to_throttling_too),
+    ("classification_of_408_and_5xx", classification_of_408_and_5xx),
+    ("classification_of_429", classification_of_429),
+    ("classification_of_other_4xx", classification_of_other_4xx),
+    ("classification_of_200", classification_of_200),
+    ("classification_of_a_timeout_message", classification_of_a_timeout_message),
+    ("classification_of_a_reset_message", classification_of_a_reset_message),
+    ("classification_of_an_upper_case_message", classification_of_an_upper_case_message),
+    ("classification_of_a_tls_message", classification_of_a_tls_message),
+    ("delay_on_attempt_0", delay_on_attempt_0),
+    ("delay_on_attempts_1_and_2", delay_on_attempts_1_and_2),
+    ("delay_with_a_quarter_jitter", delay_with_a_quarter_jitter),
+    ("delay_on_attempt_6_with_a_cap_of_10", delay_on_attempt_6_with_a_cap_of_10),
+    ("delay_for_429_with_retry_after", delay_for_429_with_retry_after),
+    ("delay_for_429_on_attempt_3", delay_for_429_on_attempt_3),
+    ("delay_for_429_with_a_large_retry_after", delay_for_429_with_a_large_retry_after),
+    ("delay_for_429_without_retry_after",
+     delay_for_429_without_retry_after),
+    ("delay_for_404", delay_for_404),
+    ("delay_on_attempts_1_and_2_of_3", delay_on_attempts_1_and_2_of_3),
+    ("delay_when_max_attempts_is_1", delay_when_max_attempts_is_1),
+    ("delay_with_8_of_10_seconds_spent", delay_with_8_of_10_seconds_spent),
+    ("delay_with_6_of_10_seconds_spent", delay_with_6_of_10_seconds_spent),
+    ("delay_for_429_with_5_of_10_seconds_spent", delay_for_429_with_5_of_10_seconds_spent),
 ]
 
 for name, fn in CHECKS:

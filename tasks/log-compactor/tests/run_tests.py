@@ -29,66 +29,66 @@ def eq(got, want, what):
 
 # -- the threshold is inclusive ----------------------------------------
 
-def min_count_one_keeps_a_single_record():
+def one_record_min_count_1():
     eq(compact([(1, "a", "x")], 1), [("a", "x")], "output for one record")
 
 
-def min_count_is_at_least_not_more_than():
+def three_records_min_count_2():
     recs = [(1, "a", "x"), (2, "a", "y"), (3, "b", "z")]
     eq(compact(recs, 2), [("a", "y")], "output with min_count=2")
 
 
-def a_key_below_the_threshold_is_dropped():
+def mixed_counts_min_count_2():
     recs = [(1, "a", "x"), (2, "b", "y"), (3, "b", "z")]
     eq(compact(recs, 2), [("b", "z")], "output with min_count=2")
 
 
 # -- highest timestamp wins, not last seen -----------------------------
 
-def out_of_order_records_pick_the_highest_timestamp():
+def out_of_order_timestamps():
     recs = [(5, "a", "late"), (1, "a", "early")]
-    eq(compact(recs, 1), [("a", "late")], "value for a key with a stale follow-up")
+    eq(compact(recs, 1), [("a", "late")], "value for 'a'")
 
 
-def a_tie_on_timestamp_goes_to_the_later_record():
+def equal_timestamps():
     recs = [(5, "a", "first"), (5, "a", "second")]
-    eq(compact(recs, 1), [("a", "second")], "value when two records tie on timestamp")
+    eq(compact(recs, 1), [("a", "second")], "value for 'a'")
 
 
 # -- first-appearance ordering -----------------------------------------
 
-def output_follows_first_appearance_not_the_alphabet():
+def three_keys_not_in_alphabetical_order():
     recs = [(1, "z", "1"), (2, "a", "2"), (3, "m", "3")]
     eq(compact(recs, 1), [("z", "1"), ("a", "2"), ("m", "3")],
        "output order")
 
 
-def first_appearance_survives_later_updates():
+def a_key_updated_after_a_later_key_appears():
     recs = [(1, "z", "1"), (2, "a", "2"), (9, "z", "updated")]
     eq(compact(recs, 1), [("z", "updated"), ("a", "2")], "output order")
 
 
-def ordering_holds_when_some_keys_are_dropped():
+def ordering_with_a_threshold():
     recs = [(1, "z", "1"), (2, "a", "2"), (3, "a", "3"), (4, "z", "4")]
     eq(compact(recs, 2), [("z", "4"), ("a", "3")], "output order with a threshold")
 
 
 # -- the stream is walked once -----------------------------------------
 
-def accepts_a_generator():
+def generator_input():
     def gen():
         yield (1, "a", "x")
         yield (2, "b", "y")
-    eq(compact(gen(), 1), [("a", "x"), ("b", "y")], "output from a generator")
+    eq(compact(gen(), 1), [("a", "x"), ("b", "y")], "output")
 
 
-def empty_stream():
-    eq(compact(iter([]), 1), [], "output for an empty stream")
+def empty_input():
+    eq(compact(iter([]), 1), [], "output")
 
 
 # -- cost ---------------------------------------------------------------
 
-def stays_linear_in_the_number_of_records():
+def forty_thousand_distinct_keys():
     # Sized so the two shapes are ~500x apart on this class of machine: a dict
     # lookup per record finishes in hundredths of a second, a scan of the keys
     # seen so far takes the better part of ten. Anything in between is not a
@@ -103,13 +103,11 @@ def stays_linear_in_the_number_of_records():
         raise AssertionError(f"compacting {n} distinct keys returned {len(out)} rows")
     if elapsed > 3.0:
         raise AssertionError(
-            f"compacting {n} records took {elapsed:.1f}s, which is too slow: "
-            "per-record work is growing with the number of distinct keys seen "
-            "so far. See the cost section of the spec."
+            f"compacting {n} records took {elapsed:.1f}s; the limit is 3.0s"
         )
 
 
-def stays_linear_when_keys_repeat():
+def forty_thousand_records_over_twenty_thousand_keys():
     n = 40000
     recs = [(i, f"key-{i % 20000}", i) for i in range(n)]
     t0 = time.monotonic()
@@ -119,27 +117,25 @@ def stays_linear_when_keys_repeat():
         raise AssertionError(f"expected 20000 rows, got {len(out)}")
     if elapsed > 3.0:
         raise AssertionError(
-            f"compacting {n} records took {elapsed:.1f}s, which is too slow: "
-            "per-record work is growing with the number of distinct keys seen "
-            "so far. See the cost section of the spec."
+            f"compacting {n} records took {elapsed:.1f}s; the limit is 3.0s"
         )
 
 
 CHECKS = [
-    ("min_count_one_keeps_a_single_record", min_count_one_keeps_a_single_record),
-    ("min_count_is_at_least_not_more_than", min_count_is_at_least_not_more_than),
-    ("a_key_below_the_threshold_is_dropped", a_key_below_the_threshold_is_dropped),
-    ("out_of_order_records_pick_the_highest_timestamp",
-     out_of_order_records_pick_the_highest_timestamp),
-    ("a_tie_on_timestamp_goes_to_the_later_record", a_tie_on_timestamp_goes_to_the_later_record),
-    ("output_follows_first_appearance_not_the_alphabet",
-     output_follows_first_appearance_not_the_alphabet),
-    ("first_appearance_survives_later_updates", first_appearance_survives_later_updates),
-    ("ordering_holds_when_some_keys_are_dropped", ordering_holds_when_some_keys_are_dropped),
-    ("accepts_a_generator", accepts_a_generator),
-    ("empty_stream", empty_stream),
-    ("stays_linear_in_the_number_of_records", stays_linear_in_the_number_of_records),
-    ("stays_linear_when_keys_repeat", stays_linear_when_keys_repeat),
+    ("one_record_min_count_1", one_record_min_count_1),
+    ("three_records_min_count_2", three_records_min_count_2),
+    ("mixed_counts_min_count_2", mixed_counts_min_count_2),
+    ("out_of_order_timestamps",
+     out_of_order_timestamps),
+    ("equal_timestamps", equal_timestamps),
+    ("three_keys_not_in_alphabetical_order",
+     three_keys_not_in_alphabetical_order),
+    ("a_key_updated_after_a_later_key_appears", a_key_updated_after_a_later_key_appears),
+    ("ordering_with_a_threshold", ordering_with_a_threshold),
+    ("generator_input", generator_input),
+    ("empty_input", empty_input),
+    ("forty_thousand_distinct_keys", forty_thousand_distinct_keys),
+    ("forty_thousand_records_over_twenty_thousand_keys", forty_thousand_records_over_twenty_thousand_keys),
 ]
 
 for name, fn in CHECKS:

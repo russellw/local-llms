@@ -38,49 +38,49 @@ def journal_of(*pairs):
 
 # -- framing -----------------------------------------------------------
 
-def round_trip_one_record():
+def encode_decode_one_record():
     eq(decode_records(encode_record(1, "a", 5)), [(1, "a", 5)], "decoded record")
 
 
-def round_trip_negative_delta():
+def encode_decode_negative_delta():
     eq(decode_records(encode_record(7, "b", -12)), [(7, "b", -12)], "decoded record")
 
 
-def round_trip_many():
+def encode_decode_three_records():
     blob = journal_of(("a", 1), ("b", 2), ("a", 3))
     eq(decode_records(blob), [(1, "a", 1), (2, "b", 2), (3, "a", 3)], "decoded records")
 
 
-def empty_journal():
+def empty_blob():
     eq(decode_records(b""), [], "decoded records from nothing")
 
 
 # -- applying ----------------------------------------------------------
 
-def recovers_every_record_from_a_fresh_checkpoint():
+def recovery_from_lsn_0():
     blob = journal_of(("a", 1), ("b", 2), ("a", 3))
     eq(recover(Checkpoint(), blob), {"a": 4, "b": 2}, "recovered state")
 
 
-def new_keys_start_at_zero():
+def recovery_of_an_unseen_key():
     eq(recover(Checkpoint(), journal_of(("z", -5))), {"z": -5}, "recovered state")
 
 
-def records_at_or_below_the_checkpoint_are_skipped():
+def recovery_from_lsn_2_of_3():
     # lsn 1 and 2 are already in the snapshot; only lsn 3 is pending.
     blob = journal_of(("a", 1), ("b", 2), ("a", 3))
     cp = Checkpoint({"a": 1, "b": 2}, lsn=2)
     eq(recover(cp, blob), {"a": 4, "b": 2}, "recovered state")
 
 
-def the_record_at_the_checkpoint_lsn_is_not_replayed():
+def recovery_from_lsn_1_of_1():
     # The classic off-by-one. lsn 1 is in the snapshot; replaying it makes a=2.
     blob = journal_of(("a", 1))
     cp = Checkpoint({"a": 1}, lsn=1)
     eq(recover(cp, blob), {"a": 1}, "recovered state")
 
 
-def a_fully_covered_journal_changes_nothing():
+def recovery_from_lsn_2_of_2():
     blob = journal_of(("a", 1), ("b", 2))
     cp = Checkpoint({"a": 1, "b": 2}, lsn=2)
     eq(recover(cp, blob), {"a": 1, "b": 2}, "recovered state")
@@ -88,13 +88,13 @@ def a_fully_covered_journal_changes_nothing():
 
 # -- the checkpoint is not the caller's to modify ----------------------
 
-def recover_does_not_mutate_the_checkpoint():
+def checkpoint_after_recovery():
     cp = Checkpoint({"a": 1}, lsn=1)
     recover(cp, journal_of(("a", 1), ("a", 10)))
     eq(cp.state, {"a": 1}, "checkpoint state after recovery")
 
 
-def recovering_twice_gives_the_same_answer():
+def two_recoveries_from_one_checkpoint():
     cp = Checkpoint({"a": 1}, lsn=1)
     blob = journal_of(("a", 1), ("a", 10))
     # Copied: if recover returns the checkpoint's own dict, `first` would be
@@ -106,96 +106,96 @@ def recovering_twice_gives_the_same_answer():
 
 # -- a torn tail -------------------------------------------------------
 
-def a_payload_cut_short_is_discarded():
+def blob_cut_inside_a_payload():
     blob = journal_of(("a", 1), ("b", 2))
     torn = blob[:-3]
-    eq(decode_records(torn), [(1, "a", 1)], "records from a torn journal")
+    eq(decode_records(torn), [(1, "a", 1)], "decoded records")
 
 
-def a_header_cut_short_is_discarded():
+def blob_cut_inside_a_header():
     blob = journal_of(("a", 1), ("b", 2))
     # Keep the first record whole and only five bytes of the next header.
     first_len = len(encode_record(1, "a", 1))
     eq(decode_records(blob[:first_len + 5]), [(1, "a", 1)],
-       "records from a journal ending inside a header")
+       "decoded records")
 
 
-def a_torn_tail_does_not_raise():
+def blob_cut_at_every_offset():
     blob = journal_of(("a", 1), ("b", 2))
     for cut in range(1, len(blob)):
         decode_records(blob[:cut])
 
 
-def recovery_over_a_torn_tail():
+def recovery_from_a_cut_blob():
     blob = journal_of(("a", 1), ("b", 2))
     eq(recover(Checkpoint(), blob[:-3]), {"a": 1}, "recovered state")
 
 
 # -- a corrupt record stops replay -------------------------------------
 
-def _corrupt_second_record(blob):
+def _flip_a_byte_in_the_second_record(blob):
     """Flip a byte inside the second record's payload."""
     first = len(encode_record(1, "a", 1))
     i = first + 8  # first byte of the second record's payload
     return blob[:i] + bytes([blob[i] ^ 0xFF]) + blob[i + 1:]
 
 
-def a_corrupt_record_is_discarded():
-    blob = _corrupt_second_record(journal_of(("a", 1), ("b", 2), ("c", 3)))
+def decode_with_a_bad_checksum():
+    blob = _flip_a_byte_in_the_second_record(journal_of(("a", 1), ("b", 2), ("c", 3)))
     got = decode_records(blob)
     if got and got[0] != (1, "a", 1):
         raise AssertionError(f"first record was {got[0]!r}, expected (1, 'a', 1)")
     if any(r[1] == "b" for r in got):
-        raise AssertionError("the corrupt record was returned as if it were intact")
+        raise AssertionError("a record whose checksum does not match was returned")
 
 
-def everything_after_a_corrupt_record_is_discarded_too():
+def decode_past_a_bad_checksum():
     # The third record is perfectly valid. It must still be dropped: replay
     # stops at the corruption rather than skipping over it.
-    blob = _corrupt_second_record(journal_of(("a", 1), ("b", 2), ("c", 3)))
-    eq(decode_records(blob), [(1, "a", 1)], "records after a corrupt one")
+    blob = _flip_a_byte_in_the_second_record(journal_of(("a", 1), ("b", 2), ("c", 3)))
+    eq(decode_records(blob), [(1, "a", 1)], "decoded records")
 
 
-def a_corrupt_record_does_not_raise():
-    _corrupt_second_record(journal_of(("a", 1), ("b", 2), ("c", 3)))
-    decode_records(_corrupt_second_record(journal_of(("a", 1), ("b", 2), ("c", 3))))
+def bad_checksum_does_not_raise():
+    _flip_a_byte_in_the_second_record(journal_of(("a", 1), ("b", 2), ("c", 3)))
+    decode_records(_flip_a_byte_in_the_second_record(journal_of(("a", 1), ("b", 2), ("c", 3))))
 
 
-def recovery_stops_at_the_corruption():
-    blob = _corrupt_second_record(journal_of(("a", 1), ("b", 2), ("c", 3)))
+def recovery_with_a_bad_checksum():
+    blob = _flip_a_byte_in_the_second_record(journal_of(("a", 1), ("b", 2), ("c", 3)))
     eq(recover(Checkpoint(), blob), {"a": 1}, "recovered state")
 
 
-def the_checksum_covers_the_payload_only():
+def decode_with_a_differently_scoped_checksum():
     # Rebuild a record with a checksum taken over header+payload and it must
     # be rejected -- which also pins down what a correct checksum covers.
     import struct
     payload = b"\x00".join([b"1", b"a", b"1"])
     header = struct.pack(">II", len(payload), crc32(struct.pack(">I", len(payload)) + payload) & 0xFFFFFFFF)
-    eq(decode_records(header + payload), [], "records from a wrongly-checksummed journal")
+    eq(decode_records(header + payload), [], "decoded records")
 
 
 CHECKS = [
-    ("round_trip_one_record", round_trip_one_record),
-    ("round_trip_negative_delta", round_trip_negative_delta),
-    ("round_trip_many", round_trip_many),
-    ("empty_journal", empty_journal),
-    ("recovers_every_record_from_a_fresh_checkpoint", recovers_every_record_from_a_fresh_checkpoint),
-    ("new_keys_start_at_zero", new_keys_start_at_zero),
-    ("records_at_or_below_the_checkpoint_are_skipped", records_at_or_below_the_checkpoint_are_skipped),
-    ("the_record_at_the_checkpoint_lsn_is_not_replayed", the_record_at_the_checkpoint_lsn_is_not_replayed),
-    ("a_fully_covered_journal_changes_nothing", a_fully_covered_journal_changes_nothing),
-    ("recover_does_not_mutate_the_checkpoint", recover_does_not_mutate_the_checkpoint),
-    ("recovering_twice_gives_the_same_answer", recovering_twice_gives_the_same_answer),
-    ("a_payload_cut_short_is_discarded", a_payload_cut_short_is_discarded),
-    ("a_header_cut_short_is_discarded", a_header_cut_short_is_discarded),
-    ("a_torn_tail_does_not_raise", a_torn_tail_does_not_raise),
-    ("recovery_over_a_torn_tail", recovery_over_a_torn_tail),
-    ("a_corrupt_record_is_discarded", a_corrupt_record_is_discarded),
-    ("everything_after_a_corrupt_record_is_discarded_too", everything_after_a_corrupt_record_is_discarded_too),
-    ("a_corrupt_record_does_not_raise", a_corrupt_record_does_not_raise),
-    ("recovery_stops_at_the_corruption", recovery_stops_at_the_corruption),
-    ("the_checksum_covers_the_payload_only", the_checksum_covers_the_payload_only),
+    ("encode_decode_one_record", encode_decode_one_record),
+    ("encode_decode_negative_delta", encode_decode_negative_delta),
+    ("encode_decode_three_records", encode_decode_three_records),
+    ("empty_blob", empty_blob),
+    ("recovery_from_lsn_0", recovery_from_lsn_0),
+    ("recovery_of_an_unseen_key", recovery_of_an_unseen_key),
+    ("recovery_from_lsn_2_of_3", recovery_from_lsn_2_of_3),
+    ("recovery_from_lsn_1_of_1", recovery_from_lsn_1_of_1),
+    ("recovery_from_lsn_2_of_2", recovery_from_lsn_2_of_2),
+    ("checkpoint_after_recovery", checkpoint_after_recovery),
+    ("two_recoveries_from_one_checkpoint", two_recoveries_from_one_checkpoint),
+    ("blob_cut_inside_a_payload", blob_cut_inside_a_payload),
+    ("blob_cut_inside_a_header", blob_cut_inside_a_header),
+    ("blob_cut_at_every_offset", blob_cut_at_every_offset),
+    ("recovery_from_a_cut_blob", recovery_from_a_cut_blob),
+    ("decode_with_a_bad_checksum", decode_with_a_bad_checksum),
+    ("decode_past_a_bad_checksum", decode_past_a_bad_checksum),
+    ("bad_checksum_does_not_raise", bad_checksum_does_not_raise),
+    ("recovery_with_a_bad_checksum", recovery_with_a_bad_checksum),
+    ("decode_with_a_differently_scoped_checksum", decode_with_a_differently_scoped_checksum),
 ]
 
 for name, fn in CHECKS:

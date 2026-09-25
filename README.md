@@ -150,6 +150,20 @@ Each carries a requirement that **cannot be inferred from the code** -- stated
 in a `README.md` or `SPEC.md` that nothing points the model towards. Whether it
 goes and reads that file is its own column in the report.
 
+**How much the tests give away, stated honestly.** A failing assertion has to
+report what it expected, so the *target values* are visible: a model that reads
+`expected 'throttled'` knows what 429 should classify as. What it does not get
+is the *reason* -- it must still infer "round half to even" from "expected 2,
+not 3", and the spec is where the reasons are.
+
+That boundary was not free. The first version of this suite named its checks
+after the rules they enforced -- `rounds_once_not_per_lot`,
+`static_beats_param_registered_later`,
+`everything_after_a_corrupt_record_is_discarded_too` -- and printed those names
+on failure. The specs were therefore readable straight off the test output, and
+two models solved `crash-recovery` without opening `SPEC.md` at all. Checks are
+now named for the scenario they run, not the rule they check.
+
 ### Adding a task
 
 ```
@@ -163,8 +177,19 @@ tasks/<id>/
 `tests/run_tests.py` must print `RESULT <n> passed <m> failed` and exit
 non-zero on failure. Print **curated one-line failures and never a traceback**:
 a traceback quotes the failing source line, which for a hidden suite hands the
-model the assertion it is supposed to satisfy. Then run
-`python3 -m bench selfcheck`.
+model the assertion it is supposed to satisfy.
+
+**Name checks after the scenario, not the rule.** `two_lots_of_half_a_cent`,
+not `rounds_once_not_per_lot`; `delay_on_attempt_6_with_a_cap_of_10`, not
+`the_ceiling_is_capped_before_jitter`. The same goes for the text in an
+assertion: report the quantity that differs ("cost of issuing 2"), not the
+policy it should have followed ("cost of two half-cent units rounded once").
+The check name is printed to the model on every failing run, so a descriptive
+one is a free copy of the spec and makes the `reads the spec` column measure
+nothing. This is the single easiest way to ruin a task, and it ruined all five
+of these before it was noticed.
+
+Then run `python3 -m bench selfcheck`.
 
 ## What this does not measure
 
@@ -210,20 +235,23 @@ there as unexplained rather than damning.
 Four models, on the machine described above. `results/REPORT.md` has the full
 table and the diagnostics; this is the part worth knowing.
 
-These numbers are over the **first four** tasks. `crash-recovery` was added in
-response to them and no model has run it, so every row below will change when
-they do.
+**These numbers are stale and are kept only as history.** They were measured
+against a version of the tests whose check names stated the rules the specs were
+supposed to hold, so the `reads the spec` column and anything resting on it
+cannot be trusted. They live in `results/archive/leaky-test-names/`. A run
+against the current tests is in progress.
 
 | Model | solved | operates tools | reads the spec | false done | tok/s |
 |---|---|---|---|---|---|
-| gpt-oss-20b-MXFP4 | **100%** | 100% | 83% | 0 | 1.8 |
+| gpt-oss-20b-MXFP4 | 100% | 100% | 83% | 0 | 1.8 |
 | Qwen3-Coder-30B-A3B | 58% | 100% | 75% | 4 | 1.2 |
 | Devstral-Small-2507 | 50% | 100% | 25% | 0 | 0.6 |
 | Qwen2.5-Coder-32B | 25% | 0% | 0% | 0 | 0.3 |
 
 The MoE models were run three times per task and the dense ones once, because
 at 0.3 tok/s a single pass is a day. A one-attempt row resolves less; treat the
-gap between 58% and 50% as nothing.
+gap between 58% and 50% as nothing. All four scored 100% on `crash-recovery`,
+which is what exposed the leak: two of them did it without opening the spec.
 
 **The ranking is the least interesting thing here.** The three models that fail
 fail in three unrelated ways, and a single score would have hidden all of it:
