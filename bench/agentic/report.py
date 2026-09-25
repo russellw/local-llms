@@ -84,6 +84,8 @@ def summarise(meta: dict, rows: list[dict]) -> dict:
         "verifies": _mean(r.get("test_runs", 0) > 0 for r in rows),
         "reads_spec": _mean(bool(r.get("read_spec")) for r in spec_rows) if spec_rows else None,
         "false_done": sum(1 for r in rows if r.get("finished_unverified")),
+        "false_green": sum(1 for r in rows if r.get("false_green")),
+        "visible_solved": _mean(bool(r.get("visible_passed")) for r in rows),
         "regressed": sum(1 for r in rows if r.get("regressed")),
         "edits": sum(r.get("edits_made", 0) for r in rows) / len(rows),
         "edit_failures": sum(r.get("calls_refused", 0) for r in rows),
@@ -125,21 +127,21 @@ def render(summaries: list[dict]) -> str:
 
     w = max(len(s["model"]) for s in summaries)
     head = (
-        f"| {'Model'.ljust(w)} | solved | any | operates tools | verifies | "
-        "reads the spec | false done | steps | tok/s |"
+        f"| {'Model'.ljust(w)} | solved | tests green | any | operates tools | "
+        "reads the spec | green but wrong | false done | steps | tok/s |"
     )
     rule = (
-        f"|{'-' * (w + 2)}|--------|-----|----------------|----------|"
-        "----------------|------------|-------|-------|"
+        f"|{'-' * (w + 2)}|--------|-------------|-----|----------------|"
+        "----------------|-----------------|------------|-------|-------|"
     )
     lines = [head, rule]
     for s in summaries:
         lines.append(
             f"| {s['model'].ljust(w)} | {_pct(s['solved']):>6} | "
-            f"{_pct(s['solved_any']):>3} | {_pct(s['operates']):>14} | "
-            f"{_pct(s['verifies']):>8} | {_pct(s['reads_spec']):>14} | "
-            f"{s['false_done']:>10} | {_pct(s['steps_used']):>5} | "
-            f"{s['tok_per_s']:>5.1f} |"
+            f"{_pct(s['visible_solved']):>11} | {_pct(s['solved_any']):>3} | "
+            f"{_pct(s['operates']):>14} | {_pct(s['reads_spec']):>14} | "
+            f"{s['false_green']:>15} | {s['false_done']:>10} | "
+            f"{_pct(s['steps_used']):>5} | {s['tok_per_s']:>5.1f} |"
         )
 
     n_tasks = max(s["n_tasks"] for s in summaries)
@@ -162,10 +164,18 @@ def render(summaries: list[dict]) -> str:
         f"Sample: {sample}",
         "",
         "**solved** is the score, and it is the only column that is. It is the",
-        "fraction of attempts where the hidden test suite passes against the",
-        "project the model left behind -- not what the model claimed, and not",
-        "whether some intermediate run went green. Everything else explains how.",
+        "fraction of attempts where the **held-out** suite passes against the",
+        "project the model left behind. The model never sees or runs that suite.",
+        "Everything else explains how.",
         "",
+        "- **tests green** — the suite the model *could* run, passing at the end.",
+        "  This is what the model thinks it achieved.",
+        "- **green but wrong** — attempts where *tests green* and *solved*",
+        "  disagree: every signal the model had said done, and the held-out",
+        "  suite says no. The visible tests report the symptoms; the held-out",
+        "  ones check the rules that only the spec states, so this column counts",
+        "  the fixes that satisfied the symptoms without reading why. It is the",
+        "  closest thing here to how real work goes wrong.",
         "- **any** — tasks solved by at least one attempt. The gap from *solved*",
         "  measures consistency.",
         "- **operates tools** — four fifths of calls in the tool-call field, four",
@@ -185,6 +195,11 @@ def render(summaries: list[dict]) -> str:
     ]
     for s in summaries:
         notes = []
+        if s["false_green"]:
+            notes.append(
+                f"**{s['false_green']} attempt(s) went green on every test they "
+                "could run and still failed the held-out suite**"
+            )
         if s["false_done"]:
             notes.append(
                 f"**{s['false_done']} attempt(s) declared done with tests failing**"

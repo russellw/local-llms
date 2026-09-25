@@ -171,6 +171,8 @@ def run_suite(
                 if verbose:
                     mark = "PASS" if res.passed else "fail"
                     extra = []
+                    if res.false_green:
+                        extra.append("GREEN BUT WRONG -- held-out suite fails")
                     if res.finished_unverified:
                         extra.append("declared done while failing")
                     if res.regressed:
@@ -179,7 +181,7 @@ def run_suite(
                         extra.append(f"stopped: {res.stopped}")
                     print(
                         f"{mark} ({res.steps}/{res.budget} steps, "
-                        f"{res.tests_failed_at_end}/{res.tests_total} failing, "
+                        f"{res.acceptance_failed}/{res.acceptance_total} held-out failing, "
                         f"{res.edits_made} edits, {res.wall_s / 60:.1f}m)"
                         + ("  -- " + "; ".join(extra) if extra else "")
                     )

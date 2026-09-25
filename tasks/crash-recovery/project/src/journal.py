@@ -14,6 +14,6 @@ class Journal:
 
     def append(self, key, delta):
         """Write one record. Returns the lsn it was given."""
-        self._last_lsn += 1
         self._buf += encode_record(self._last_lsn, key, delta)
+        self._last_lsn += 1
         return self._last_lsn

@@ -122,17 +122,13 @@ def path_deeper_than_the_pattern():
 
 
 CHECKS = [
-    ("other_path_with_both_registered", other_path_with_both_registered),
-    ("captures_for_one_parameter", captures_for_one_parameter),
-    ("captures_for_two_parameters", captures_for_two_parameters),
-    ("wildcard_over_three_segments", wildcard_over_three_segments),
-    ("wildcard_over_one_segment", wildcard_over_one_segment),
-    ("wildcard_over_no_segments", wildcard_over_no_segments),
-    ("path_with_a_trailing_slash", path_with_a_trailing_slash),
-    ("root_path", root_path),
-    ("root_against_a_one_segment_pattern", root_against_a_one_segment_pattern),
-    ("unregistered_path", unregistered_path),
-    ("path_deeper_than_the_pattern", path_deeper_than_the_pattern),
+    ("me_route_registered_second", me_route_registered_second),
+    ("me_route_registered_first", me_route_registered_first),
+    ("wildcard_and_param_both_registered", wildcard_and_param_both_registered),
+    ("patterns_differing_at_the_first_segment",
+     patterns_differing_at_the_first_segment),
+    ("two_patterns_of_the_same_shape",
+     two_patterns_of_the_same_shape),
 ]
 
 for name, fn in CHECKS:

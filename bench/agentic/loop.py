@@ -185,10 +185,18 @@ class TaskResult:
     tests_ever_green: bool = False
     finished_unverified: bool = False
     regressed: bool = False
+    # The visible suite went green and the held-out one did not: a fix that
+    # satisfies every signal the model can see and is still wrong. The code
+    # equivalent of a verified answer to the wrong question, and the thing no
+    # amount of letting it re-run the tests can catch.
+    visible_passed: bool = False
+    false_green: bool = False
 
     first_green_step: int = 0
     tests_failed_at_end: int = 0
     tests_total: int = 0
+    acceptance_failed: int = 0
+    acceptance_total: int = 0
 
     wall_s: float = 0.0
     completion_tokens: int = 0
@@ -237,7 +245,12 @@ def run_task(
     res = TaskResult(task_id=task.id, difficulty=task.difficulty, budget=task.budget)
     res.spec_relevant = bool(task.spec_file)
     transcript: list[dict] = []
-    ws = Workspace(task.project_dir, task.tests_dir, timeout=task.test_timeout)
+    ws = Workspace(
+        task.project_dir,
+        task.tests_dir,
+        acceptance_src=task.acceptance_dir,
+        timeout=task.test_timeout,
+    )
 
     native = protocol_mode == "native"
     system = SYSTEM if native else (
@@ -359,11 +372,20 @@ def run_task(
             if done:
                 break
 
-        # The verdict: the suite against whatever the model left behind.
+        # The verdict comes from the held-out suite, not the one the model was
+        # allowed to run. Both are recorded: the gap between them is the
+        # interesting number.
         final = ws.run_tests()
-        res.passed = final.ok
+        res.visible_passed = final.ok
         res.tests_total = final.total
         res.tests_failed_at_end = final.failed
+
+        accept = ws.run_acceptance()
+        res.passed = accept.ok
+        res.acceptance_total = accept.total
+        res.acceptance_failed = accept.failed
+        res.false_green = final.ok and not accept.ok
+
         if res.stopped == "finish" and not final.ok:
             res.finished_unverified = True
         if res.tests_ever_green and not final.ok:

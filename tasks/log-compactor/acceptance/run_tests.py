@@ -122,13 +122,13 @@ def forty_thousand_records_over_twenty_thousand_keys():
 
 
 CHECKS = [
-    ("one_record_min_count_1", one_record_min_count_1),
-    ("three_records_min_count_2", three_records_min_count_2),
-    ("mixed_counts_min_count_2", mixed_counts_min_count_2),
-    ("out_of_order_timestamps",
-     out_of_order_timestamps),
-    ("generator_input", generator_input),
-    ("empty_input", empty_input),
+    ("equal_timestamps", equal_timestamps),
+    ("three_keys_not_in_alphabetical_order",
+     three_keys_not_in_alphabetical_order),
+    ("a_key_updated_after_a_later_key_appears", a_key_updated_after_a_later_key_appears),
+    ("ordering_with_a_threshold", ordering_with_a_threshold),
+    ("forty_thousand_distinct_keys", forty_thousand_distinct_keys),
+    ("forty_thousand_records_over_twenty_thousand_keys", forty_thousand_records_over_twenty_thousand_keys),
 ]
 
 for name, fn in CHECKS:

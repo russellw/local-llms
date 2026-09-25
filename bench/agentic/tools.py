@@ -112,6 +112,7 @@ class Workspace:
 
     project_src: str
     tests_src: str
+    acceptance_src: str = ""
     timeout: float = 90.0
 
     root: str = field(default="", init=False)
@@ -212,13 +213,22 @@ class Workspace:
             f.write(data.replace(old, new))
         return f"replaced 1 occurrence in {path}"
 
+    def run_acceptance(self) -> TestOutcome:
+        """Run the held-out suite. Never reachable from inside the loop."""
+        if not self.acceptance_src or not os.path.isdir(self.acceptance_src):
+            return TestOutcome(ok=False, report="no acceptance suite", crashed=True)
+        return self._run(self.acceptance_src)
+
     def run_tests(self) -> TestOutcome:
-        """Run the hidden suite against the current project state."""
+        """Run the suite the model is allowed to run."""
+        return self._run(self.tests_src)
+
+    def _run(self, suite_src: str) -> TestOutcome:
         work = tempfile.mkdtemp(prefix="agentic-test-")
         self._tmp.append(work)
         try:
             shutil.copytree(self.root, work, dirs_exist_ok=True)
-            shutil.copytree(self.tests_src, work, dirs_exist_ok=True)
+            shutil.copytree(suite_src, work, dirs_exist_ok=True)
             runner = os.path.join(work, "run_tests.py")
             if not os.path.isfile(runner):
                 return TestOutcome(ok=False, report="no test runner", crashed=True)

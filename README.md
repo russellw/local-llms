@@ -12,10 +12,30 @@ data leaving the box.
 ## What it measures
 
 One suite. Each task is a small Python project that does not pass its tests,
-and a test suite the model **cannot read but can run as often as it likes**.
+and **two** test suites:
+
+- one the model **cannot read but can run as often as it likes**, which reports
+  the symptoms;
+- one it never sees, never runs, and is scored on, which checks the rules that
+  are stated only in the project's spec.
+
 The model gets six tools -- list, read, write, targeted replace, run the tests,
-stop -- and a step budget. It passes when the hidden suite passes against
+stop -- and a step budget. It passes when the **held-out** suite passes against
 whatever it left on disk.
+
+That split is the point of the design. A model can satisfy every signal it has
+access to and still be wrong, and the gap between the two suites is the
+`green but wrong` column. This is how real work fails: the tests pass and
+production breaks, because the tests described the symptom and the requirement
+lived somewhere nobody read.
+
+It exists because the first version of this suite had only the runnable half,
+and a 20B model solved every task on every attempt. A suite a model can run to
+completion measures how well it hill-climbs a gradient you handed it. The
+weaker the model, the more it leans on that: on the runnable-only version the
+strongest model needed 2.1 test runs per attempt and the weakest 8.8. Removing
+the gradient is the only change that makes the question *why is this wrong*
+unavoidable.
 
 That is deliberately one task and not two, because it is the compound ability
 that decides whether a local model is any use:
@@ -170,9 +190,20 @@ now named for the scenario they run, not the rule they check.
 tasks/<id>/
     task.json     title, brief, budget, difficulty, spec_file
     project/      the tree the model is given, copied fresh per attempt
-    tests/        run_tests.py -- hidden; copied in only to run
-    reference/    files overlaid on project/ to make the suite pass
+    tests/        run_tests.py -- runnable by the model, never readable
+    acceptance/   run_tests.py -- held out; the suite the score comes from
+    reference/    files overlaid on project/ to make both suites pass
 ```
+
+**Design the split deliberately.** `tests/` must fail as shipped, or the model
+has nothing to work from and stops at once. `acceptance/` must hold the rules
+that only the spec states, so that a fix arrived at by watching the visible
+tests go green is not enough. The test worth running by hand: build the
+reference, put the spec-only rules back to their broken state, and check that
+the visible suite goes green while the held-out one does not. All five tasks
+here satisfy that, and `crash-recovery` needed a mechanical bug added
+afterwards because all three of its original bugs were spec-only -- its visible
+suite passed as shipped, which would have made it unplayable.
 
 `tests/run_tests.py` must print `RESULT <n> passed <m> failed` and exit
 non-zero on failure. Print **curated one-line failures and never a traceback**:

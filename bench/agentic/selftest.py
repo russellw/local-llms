@@ -16,6 +16,8 @@ announces success without fixing anything must not.
 
 from __future__ import annotations
 
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -71,6 +73,15 @@ def _reference_files(task):
     return out
 
 
+def _ws(task) -> Workspace:
+    return Workspace(
+        task.project_dir,
+        task.tests_dir,
+        acceptance_src=task.acceptance_dir,
+        timeout=task.test_timeout,
+    )
+
+
 def run() -> list[str]:
     fails: list[str] = []
     tasks = load_tasks()
@@ -79,32 +90,49 @@ def run() -> list[str]:
 
     for task in tasks:
         # -- shipped must fail, reference must pass ---------------------
-        ws = Workspace(task.project_dir, task.tests_dir, timeout=task.test_timeout)
+        ws = _ws(task)
         try:
-            before = ws.run_tests()
+            before, before_acc = ws.run_tests(), ws.run_acceptance()
             if before.crashed:
                 fails.append(f"{task.id}: test runner crashed before reporting: {before.report[:200]}")
-            elif before.ok:
-                fails.append(f"{task.id}: passes as shipped, so it measures nothing")
             elif before.total == 0:
                 fails.append(f"{task.id}: test runner reported no tests")
+            elif before.ok:
+                # The model needs something to work from. A task whose visible
+                # suite is already green is one it will call finish on at once.
+                fails.append(
+                    f"{task.id}: the visible suite passes as shipped, so the "
+                    "model has no signal to work from"
+                )
+            if before_acc.crashed or before_acc.total == 0:
+                fails.append(f"{task.id}: no held-out suite, or it crashed: {before_acc.report[:120]}")
+            elif before_acc.ok:
+                fails.append(
+                    f"{task.id}: the held-out suite passes as shipped, so it "
+                    "scores nothing the visible suite does not"
+                )
         finally:
             ws.close()
 
-        ws = Workspace(task.project_dir, task.tests_dir, timeout=task.test_timeout)
+        ws = _ws(task)
         try:
             shutil.copytree(task.reference_dir, ws.root, dirs_exist_ok=True)
-            after = ws.run_tests()
+            after, after_acc = ws.run_tests(), ws.run_acceptance()
             if not after.ok:
                 fails.append(
-                    f"{task.id}: reference fix does not pass its own tests "
+                    f"{task.id}: reference fix does not pass the visible suite "
                     f"({after.failed}/{after.total} failing)"
+                )
+            if not after_acc.ok:
+                fails.append(
+                    f"{task.id}: reference fix does not pass the held-out suite "
+                    f"({after_acc.failed}/{after_acc.total} failing)"
                 )
         finally:
             ws.close()
 
         # -- the tests stay hidden --------------------------------------
-        ws = Workspace(task.project_dir, task.tests_dir, timeout=task.test_timeout)
+        ws = _ws(task)
         try:
             listing = ws.list_files()
             if "run_tests" in listing or "test" in listing.lower().replace("latest", ""):
@@ -117,6 +145,16 @@ def run() -> list[str]:
                     pass
                 else:
                     fails.append(f"{task.id}: read_file reached {probe}")
+            for probe in ("acceptance/run_tests.py", "../acceptance/run_tests.py",
+                          "acceptance"):
+                try:
+                    ws.read_file(probe)
+                except ToolError:
+                    pass
+                else:
+                    fails.append(f"{task.id}: read_file reached the held-out suite at {probe}")
+            if "acceptance" in listing:
+                fails.append(f"{task.id}: the held-out suite is visible in list_files")
             # A failure report must not carry the tests' own source back.
             rep = ws.run_tests().report
             if "assert" in rep or 'File "' in rep:
@@ -131,7 +169,7 @@ def run() -> list[str]:
 
     # -- workspace mechanics -------------------------------------------
     task = tasks[0]
-    ws = Workspace(task.project_dir, task.tests_dir, timeout=task.test_timeout)
+    ws = _ws(task)
     try:
         target = ws.files()[0]
         body = ws.read_file(target)
@@ -247,7 +285,9 @@ def run() -> list[str]:
          _FakeServer(sentinel, "TimeoutError: timed out"), "native"),
         ("a server with no /apply-template", _FakeServer(None), "native"),
     ):
-        got = detect_protocol(server)
+        # It explains itself on stdout; selfcheck output is not the place.
+        with contextlib.redirect_stdout(io.StringIO()):
+            got = detect_protocol(server)
         if got != want:
             fails.append(f"detect_protocol: {label} -> {got}, expected {want}")
 

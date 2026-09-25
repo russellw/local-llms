@@ -154,13 +154,13 @@ def longer_sequence():
 
 
 CHECKS = [
-    ("issue_10_of_two_lots", issue_10_of_two_lots),
-    ("valuation_after_issuing_10", valuation_after_issuing_10),
-    ("issue_6_of_8", issue_6_of_8),
-    ("on_hand_after_issuing_6", on_hand_after_issuing_6),
-    ("valuation_after_issuing_6", valuation_after_issuing_6),
-    ("issue_three_units_at_3_4567", issue_three_units_at_3_4567),
-    ("overdraw_raises", overdraw_raises),
+    ("two_lots_of_half_a_cent", two_lots_of_half_a_cent),
+    ("issue_one_unit_at_2_5", issue_one_unit_at_2_5),
+    ("issue_one_unit_at_3_5", issue_one_unit_at_3_5),
+    ("valuation_of_one_unit_at_2_5", valuation_of_one_unit_at_2_5),
+    ("on_hand_after_an_overdraw", on_hand_after_an_overdraw),
+    ("issue_after_an_overdraw", issue_after_an_overdraw),
+    ("longer_sequence", longer_sequence),
 ]
 
 for name, fn in CHECKS:

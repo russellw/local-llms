@@ -176,19 +176,13 @@ def decode_with_a_differently_scoped_checksum():
 
 
 CHECKS = [
-    ("encode_decode_one_record", encode_decode_one_record),
-    ("encode_decode_negative_delta", encode_decode_negative_delta),
-    ("encode_decode_three_records", encode_decode_three_records),
-    ("empty_blob", empty_blob),
-    ("recovery_from_lsn_0", recovery_from_lsn_0),
-    ("recovery_of_an_unseen_key", recovery_of_an_unseen_key),
-    ("blob_cut_inside_a_payload", blob_cut_inside_a_payload),
-    ("blob_cut_inside_a_header", blob_cut_inside_a_header),
-    ("blob_cut_at_every_offset", blob_cut_at_every_offset),
-    ("recovery_from_a_cut_blob", recovery_from_a_cut_blob),
-    ("decode_with_a_bad_checksum", decode_with_a_bad_checksum),
-    ("bad_checksum_does_not_raise", bad_checksum_does_not_raise),
-    ("decode_with_a_differently_scoped_checksum", decode_with_a_differently_scoped_checksum),
+    ("recovery_from_lsn_2_of_3", recovery_from_lsn_2_of_3),
+    ("recovery_from_lsn_1_of_1", recovery_from_lsn_1_of_1),
+    ("recovery_from_lsn_2_of_2", recovery_from_lsn_2_of_2),
+    ("checkpoint_after_recovery", checkpoint_after_recovery),
+    ("two_recoveries_from_one_checkpoint", two_recoveries_from_one_checkpoint),
+    ("decode_past_a_bad_checksum", decode_past_a_bad_checksum),
+    ("recovery_with_a_bad_checksum", recovery_with_a_bad_checksum),
 ]
 
 for name, fn in CHECKS:

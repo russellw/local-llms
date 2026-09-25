@@ -3,8 +3,16 @@
     tasks/<id>/
         task.json     title, brief, budget and the rest of the metadata
         project/      the tree the model is given, copied fresh per attempt
-        tests/        the hidden suite; copied in only to run, never readable
-        reference/    files overlaid on project/ to make the suite pass
+        tests/        the suite the model may run; never readable
+        acceptance/   held out entirely -- not runnable, not readable, and the
+                      suite the score comes from
+        reference/    files overlaid on project/ to make both suites pass
+
+The split is the point. `tests/` reports the symptoms; `acceptance/` checks the
+rules that only the spec states. A fix that satisfies the symptoms without
+reading the spec goes green on everything the model can see and fails the
+score -- which is the way real work goes wrong, and the one thing a suite the
+model can run to completion cannot measure.
 
 `reference/` is what `selfcheck` uses: overlay it, run the tests, and they must
 pass. A task whose own reference fix fails its own tests measures nothing, and
@@ -44,7 +52,13 @@ class Task:
 
     @property
     def tests_dir(self) -> str:
+        """The suite the model can run as often as it likes."""
         return str(self.dir / "tests")
+
+    @property
+    def acceptance_dir(self) -> str:
+        """The suite it never sees, and the one that decides the verdict."""
+        return str(self.dir / "acceptance")
 
     @property
     def reference_dir(self) -> str:

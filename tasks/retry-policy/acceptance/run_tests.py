@@ -161,19 +161,16 @@ def delay_for_429_with_5_of_10_seconds_spent():
 
 
 CHECKS = [
-    ("classification_of_408_and_5xx", classification_of_408_and_5xx),
-    ("classification_of_other_4xx", classification_of_other_4xx),
-    ("classification_of_200", classification_of_200),
-    ("classification_of_a_timeout_message", classification_of_a_timeout_message),
-    ("classification_of_a_reset_message", classification_of_a_reset_message),
-    ("classification_of_an_upper_case_message", classification_of_an_upper_case_message),
-    ("classification_of_a_tls_message", classification_of_a_tls_message),
-    ("delay_on_attempt_0", delay_on_attempt_0),
-    ("delay_on_attempts_1_and_2", delay_on_attempts_1_and_2),
-    ("delay_with_a_quarter_jitter", delay_with_a_quarter_jitter),
-    ("delay_for_404", delay_for_404),
-    ("delay_on_attempts_1_and_2_of_3", delay_on_attempts_1_and_2_of_3),
-    ("delay_when_max_attempts_is_1", delay_when_max_attempts_is_1),
+    ("classification_of_429", classification_of_429),
+    ("delay_on_attempt_6_with_a_cap_of_10", delay_on_attempt_6_with_a_cap_of_10),
+    ("delay_for_429_with_retry_after", delay_for_429_with_retry_after),
+    ("delay_for_429_on_attempt_3", delay_for_429_on_attempt_3),
+    ("delay_for_429_with_a_large_retry_after", delay_for_429_with_a_large_retry_after),
+    ("delay_for_429_without_retry_after",
+     delay_for_429_without_retry_after),
+    ("delay_with_8_of_10_seconds_spent", delay_with_8_of_10_seconds_spent),
+    ("delay_with_6_of_10_seconds_spent", delay_with_6_of_10_seconds_spent),
+    ("delay_for_429_with_5_of_10_seconds_spent", delay_for_429_with_5_of_10_seconds_spent),
 ]
 
 for name, fn in CHECKS:
