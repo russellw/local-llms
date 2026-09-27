@@ -55,6 +55,17 @@ def _operates(r: dict, protocol: str) -> bool:
     return in_channel >= 0.8
 
 
+def _solved(r: dict) -> bool:
+    """Both suites green, recomputed here so every row uses one rule.
+
+    A crashed suite reports no checks at all; that is a failure, not a pass by
+    absence of evidence.
+    """
+    if not r.get("visible_passed"):
+        return False
+    return r.get("acceptance_total", 0) > 0 and r.get("acceptance_failed", 0) == 0
+
+
 def _mean(vals) -> float:
     vals = list(vals)
     return sum(1 for v in vals if v) / len(vals) if vals else 0.0
@@ -66,7 +77,7 @@ def summarise(meta: dict, rows: list[dict]) -> dict:
 
     by_task: dict[str, list[bool]] = defaultdict(list)
     for r in rows:
-        by_task[r["task_id"]].append(bool(r.get("passed")))
+        by_task[r["task_id"]].append(_solved(r))
 
     spec_rows = [r for r in rows if r.get("spec_relevant")]
     finished = [r for r in rows if r.get("stopped") == "finish"]
@@ -78,13 +89,17 @@ def summarise(meta: dict, rows: list[dict]) -> dict:
         "protocol": meta.get("protocol", "?"),
         "n": len(rows),
         "n_tasks": len(by_task),
-        "solved": _mean(bool(r.get("passed")) for r in rows),
+        "solved": _mean(_solved(r) for r in rows),
         "solved_any": sum(1 for v in by_task.values() if any(v)) / len(by_task),
         "operates": _mean(_operates(r, meta.get("protocol", "native")) for r in rows),
         "verifies": _mean(r.get("test_runs", 0) > 0 for r in rows),
         "reads_spec": _mean(bool(r.get("read_spec")) for r in spec_rows) if spec_rows else None,
         "false_done": sum(1 for r in rows if r.get("finished_unverified")),
         "false_green": sum(1 for r in rows if r.get("false_green")),
+        "crashed_out": sum(
+            1 for r in rows
+            if r.get("acceptance_total", 0) == 0 or r.get("tests_total", 0) == 0
+        ),
         "visible_solved": _mean(bool(r.get("visible_passed")) for r in rows),
         "regressed": sum(1 for r in rows if r.get("regressed")),
         "edits": sum(r.get("edits_made", 0) for r in rows) / len(rows),
@@ -199,6 +214,11 @@ def render(summaries: list[dict]) -> str:
             notes.append(
                 f"**{s['false_green']} attempt(s) went green on every test they "
                 "could run and still failed the held-out suite**"
+            )
+        if s.get("crashed_out"):
+            notes.append(
+                f"{s['crashed_out']} attempt(s) left the project unimportable, "
+                "so neither suite could run"
             )
         if s["false_done"]:
             notes.append(

@@ -260,6 +260,22 @@ def run() -> list[str]:
     if res.operates_tools:
         fails.append("scorer: an agent whose every call was out of band passed the operates floor")
 
+    # The verdict needs both suites, and a crashed suite is not a pass.
+    from .report import _solved
+
+    for label, rec, want in (
+        ("both suites green",
+         {"visible_passed": True, "acceptance_total": 5, "acceptance_failed": 0}, True),
+        ("held-out green but visible red",
+         {"visible_passed": False, "acceptance_total": 5, "acceptance_failed": 0}, False),
+        ("visible green but held-out red",
+         {"visible_passed": True, "acceptance_total": 5, "acceptance_failed": 2}, False),
+        ("held-out suite crashed, reporting no checks",
+         {"visible_passed": True, "acceptance_total": 0, "acceptance_failed": 0}, False),
+    ):
+        if _solved(rec) is not want:
+            fails.append(f"scoring: {label} scored {_solved(rec)}, expected {want}")
+
     # Protocol detection must answer from the template, never from a hiccup.
     from .runner import detect_protocol
 

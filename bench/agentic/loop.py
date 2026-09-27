@@ -381,9 +381,13 @@ def run_task(
         res.tests_failed_at_end = final.failed
 
         accept = ws.run_acceptance()
-        res.passed = accept.ok
         res.acceptance_total = accept.total
         res.acceptance_failed = accept.failed
+        # Both suites. The held-out one is an additional bar, not a substitute:
+        # leaving the visible tests red and happening to satisfy the spec-only
+        # rules is not a finished job, and scoring it as one credited an attempt
+        # that left two visible checks failing.
+        res.passed = final.ok and accept.ok
         res.false_green = final.ok and not accept.ok
 
         if res.stopped == "finish" and not final.ok:

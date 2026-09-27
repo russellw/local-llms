@@ -171,6 +171,8 @@ def run_suite(
                 if verbose:
                     mark = "PASS" if res.passed else "fail"
                     extra = []
+                    if res.acceptance_total == 0 or res.tests_total == 0:
+                        extra.append("project left unimportable; suites crashed")
                     if res.false_green:
                         extra.append("GREEN BUT WRONG -- held-out suite fails")
                     if res.finished_unverified:
