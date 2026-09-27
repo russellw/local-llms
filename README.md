@@ -249,70 +249,101 @@ nothing but a machine with similar memory bandwidth.
 repo, so they are not in any model's training data today. Nothing stops that
 changing, and the defence is that they are cheap to replace.
 
-**The ceiling is established for four of the five.** `inventory-ledger`,
-`route-matcher`, `log-compactor` and `retry-policy` have each been solved by a
-real model rather than merely by their own reference fix -- gpt-oss-20b solved
-all four on all three attempts. A 0% on those is the model's, and the
-transcripts will say why.
+**All five tasks are solvable and none is saturated.** gpt-oss-20b has solved
+each of the five at least once against the held-out suite, so a zero is the
+model's rather than the task's. It has also failed four of the fifteen, so no
+task is free.
 
-`crash-recovery` was added afterwards, precisely because that 100% meant the
-suite could not rank anything at or above gpt-oss-20b. It is calibrated against
-partial fixes rather than against a model, so its difficulty is argued and not
-yet demonstrated: **no model has attempted it.** Until one does, treat a zero
-there as unexplained rather than damning.
+The ceiling is no longer the problem; the floor might be. Three models score
+zero across five tasks, which orders them not at all -- `tests green`,
+`green but wrong` and `reads the spec` are what separate them, and they are
+diagnostics rather than a score. If the point is to rank models below
+gpt-oss-20b, this suite needs an easier tier more than a harder one.
 
-## What the first run found
+## What the runs found
 
 Four models, on the machine described above. `results/REPORT.md` has the full
-table and the diagnostics; this is the part worth knowing.
+table; this is the part worth knowing.
 
-**These numbers are stale and are kept only as history.** They were measured
-against a version of the tests whose check names stated the rules the specs were
-supposed to hold, so the `reads the spec` column and anything resting on it
-cannot be trusted. They live in `results/archive/leaky-test-names/`. A run
-against the current tests is in progress.
-
-| Model | solved | operates tools | reads the spec | false done | tok/s |
+| Model | solved | tests green | reads the spec | green but wrong | tok/s |
 |---|---|---|---|---|---|
-| gpt-oss-20b-MXFP4 | 100% | 100% | 83% | 0 | 1.8 |
-| Qwen3-Coder-30B-A3B | 58% | 100% | 75% | 4 | 1.2 |
-| Devstral-Small-2507 | 50% | 100% | 25% | 0 | 0.6 |
-| Qwen2.5-Coder-32B | 25% | 0% | 0% | 0 | 0.3 |
+| gpt-oss-20b-MXFP4 | **73%** | 100% | 87% | 4 | 1.9 |
+| Devstral-Small-2507 | **0%** | 60% | 20% | 3 | 0.6 |
+| Qwen3-Coder-30B-A3B | **0%** | 40% | 80% | 6 | 1.2 |
+| Qwen2.5-Coder-32B | **0%** | 20% | 0% | 1 | 0.4 |
 
-The MoE models were run three times per task and the dense ones once, because
-at 0.3 tok/s a single pass is a day. A one-attempt row resolves less; treat the
-gap between 58% and 50% as nothing. All four scored 100% on `crash-recovery`,
-which is what exposed the leak: two of them did it without opening the spec.
+The MoE pair ran three attempts per task, the dense pair one, because at 0.4
+tok/s a single pass is most of a day.
 
-**The ranking is the least interesting thing here.** The three models that fail
-fail in three unrelated ways, and a single score would have hidden all of it:
+**One model solves anything at all.** Three of the four score zero across five
+tasks, and the column that explains it is `tests green`: every model satisfies
+far more of what it can see than it actually gets right. gpt-oss goes green on
+100% of visible suites and is wrong on a quarter of them. Qwen3 goes green on
+40% and right on none.
 
-- **Qwen3-Coder-30B is competent and over-confident.** It fixes most of a task
-  and then stops: four attempts called `finish` with the suite still red, twice
-  leaving `retry-policy` at 20 of 22 passing. It is the only model that did
-  this, and it is the failure that costs most in real use, because nothing
-  downstream can catch it -- the code is plausible, the model is certain, and
-  the tests were never run again.
-- **Devstral-Small-24B spins.** On `retry-policy` it made one edit at step 6
-  and then ran the tests twenty times in a row until the budget stopped it,
-  never editing again. 10.3 hours to change one line. Its other failure,
-  `route-matcher`, is the opposite shape: 14 edits and still short.
-- **Qwen2.5-Coder-32B cannot quote code.** 17 refused edits in four attempts,
-  against zero for Qwen3 across twelve. On `route-matcher` it made 13
-  `replace_in_file` calls and landed none, drifting from the file's text --
-  `if` where the source says `elif`, sixteen spaces where it has twelve. It
-  also wrote every one of its 75 tool calls into the reply text rather than the
-  tool-call field, which is what the 0% floor records.
+### Why that took a rebuild to see
 
-**Reading the spec tracks the score better than anything else.** The models
-that went and opened the file nobody pointed them at are the models that
-solved things. The one that never opened it solved one task in four.
+The same four models, on the same five tasks, scored like this when the only
+suite was the one they could run:
 
-**Mixture-of-experts is not a nice-to-have on this hardware.** The two dense
-models read 14 and 20 GB per token against the MoE pair's ~2, and that is the
-whole difference between 1.8 tok/s and 0.3. It compounds over a twenty-turn
-task: gpt-oss finished its twelve attempts in 6.5 hours, Qwen2.5-Coder-32B took
-16 hours for four.
+| Model | runnable suite only | with a held-out suite |
+|---|---|---|
+| gpt-oss-20b-MXFP4 | 100% | 73% |
+| Qwen3-Coder-30B-A3B | 67% | 0% |
+| Devstral-Small-2507 | 60% | 0% |
+| Qwen2.5-Coder-32B | 40% | 0% |
+
+Nothing about the tasks changed. What changed is that the model can no longer
+run the thing it is scored on. A suite a model can run to completion measures
+how well it hill-climbs a gradient you handed it, and the weaker the model the
+harder it leans on that -- 2.1 test runs per attempt for the strongest, 8.8 for
+the weakest.
+
+This matters because the first version of these numbers was reassuring and
+wrong. It said a 20B model was perfect at agentic coding and a 30B was
+competent, while the same models, in the same week, went 0 for 3 on the one
+episode of the retired audit suite that had no oracle -- recording a
+well-formed, verified answer to a question nobody asked, every single time.
+
+### Reading the spec is not a preference
+
+| | solved |
+|---|---|
+| opened the spec file | 11 of 26 (42%) |
+| did not | **0 of 14 (0%)** |
+
+The cleanest case is gpt-oss on `inventory-ledger`, the same model and task
+three times over:
+
+| attempt | opened `README.md` | visible suite | solved |
+|---|---|---|---|
+| 0 | no | green | fail, 5 of 7 held-out failing |
+| 1 | **yes** | green | **PASS** |
+| 2 | no | green | fail, 5 of 7 held-out failing |
+
+The only variable is whether it went and read the file nothing pointed it at.
+
+### The failure modes are still unrelated
+
+The ranking is the least interesting part; the three models that score zero
+get there differently.
+
+- **Qwen3-Coder-30B is over-confident.** Six attempts satisfied every visible
+  test and failed the held-out suite; four more called `finish` on a red suite.
+  It is the only model that does the latter.
+- **Devstral spins.** One attempt spent 26 steps and made **zero edits**;
+  another made one edit in 28 steps over five hours.
+- **Qwen2.5-Coder-32B cannot use the tools or quote code.** Every one of its
+  calls arrived as reply text rather than in the tool-call field, it never
+  opened a spec in any attempt, and its edits are refused at ten times the rate
+  of the other models'.
+
+### Mixture-of-experts is not optional here
+
+The dense models read 14 and 20 GB per token against the MoE pair's ~2, and
+that is the whole difference between 1.9 tok/s and 0.4. Over a twenty-turn task
+it compounds: gpt-oss finished fifteen attempts in 5.7 hours, Qwen2.5-Coder-32B
+took 10.2 hours for five.
 
 ## Reading the results
 
