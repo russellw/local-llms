@@ -262,24 +262,42 @@ gpt-oss-20b, this suite needs an easier tier more than a harder one.
 
 ## What the runs found
 
-Four models, on the machine described above. `results/REPORT.md` has the full
+Five models, on the machine described above. `results/REPORT.md` has the full
 table; this is the part worth knowing.
 
-| Model | solved | tests green | reads the spec | green but wrong | tok/s |
-|---|---|---|---|---|---|
-| gpt-oss-20b-MXFP4 | **73%** | 100% | 87% | 4 | 1.9 |
-| Devstral-Small-2507 | **0%** | 60% | 20% | 3 | 0.6 |
-| Qwen3-Coder-30B-A3B | **0%** | 40% | 80% | 6 | 1.2 |
-| Qwen2.5-Coder-32B | **0%** | 20% | 0% | 1 | 0.4 |
+| Model | solved | tests green | any | reads the spec | green but wrong | tok/s |
+|---|---|---|---|---|---|---|
+| gpt-oss-20b-MXFP4 | **73%** | 100% | 100% | 87% | 4 | 1.9 |
+| Qwen3.6-27B | **73%** | 100% | 80% | 100% | 4 | 0.6 |
+| Devstral-Small-2507 | **0%** | 60% | 0% | 20% | 3 | 0.6 |
+| Qwen3-Coder-30B-A3B | **0%** | 40% | 0% | 80% | 6 | 1.2 |
+| Qwen2.5-Coder-32B | **0%** | 20% | 0% | 0% | 1 | 0.4 |
 
-The MoE pair ran three attempts per task, the dense pair one, because at 0.4
-tok/s a single pass is most of a day.
+gpt-oss-20b, Qwen3-Coder-30B-A3B and Qwen3.6-27B ran three attempts per task,
+Devstral and Qwen2.5-Coder one, because at 0.4 tok/s a single pass is most of a
+day.
 
-**One model solves anything at all.** Three of the four score zero across five
-tasks, and the column that explains it is `tests green`: every model satisfies
-far more of what it can see than it actually gets right. gpt-oss goes green on
-100% of visible suites and is wrong on a quarter of them. Qwen3 goes green on
-40% and right on none.
+**Two models solve anything at all, and they tie.** Three of the five score
+zero across five tasks, and the column that explains it is `tests green`: every
+model satisfies far more of what it can see than it actually gets right.
+gpt-oss goes green on 100% of visible suites and is wrong on a quarter of them.
+Qwen3-Coder goes green on 40% and right on none.
+
+**The tie is not a coincidence of rounding, and it hides a real difference.**
+Both models solve 11 of 15 attempts, with the same `green but wrong` count and
+no false-dones between them. They fail in different places. gpt-oss eventually
+solves all five tasks (`any` 100%) and its four failures are scattered.
+Qwen3.6-27B solves `crash-recovery` 3 for 3 -- the task added because gpt-oss
+had saturated the other four -- and fails `inventory-ledger` 0 for 3, every
+time at 2 of 7 held-out checks and 8 of 26 steps. That is a reproducible blind
+spot rather than variance: it opens the `README.md` holding the rule on every
+attempt, goes green, stops early, and gets the rounding wrong the same way
+three times.
+
+Qwen3.6-27B is also the cleanest operator in the table -- spec read on 15 of
+15, no malformed calls, no truncated arguments, no history compaction, no
+refused edits, and a third of its step budget -- and it pays for the same score
+in wall clock, at 0.55 tok/s against 1.9.
 
 ### Why that took a rebuild to see
 
@@ -309,8 +327,11 @@ well-formed, verified answer to a question nobody asked, every single time.
 
 | | solved |
 |---|---|
-| opened the spec file | 11 of 26 (42%) |
+| opened the spec file | 23 of 41 (56%) |
 | did not | **0 of 14 (0%)** |
+
+Across all 55 attempts, nothing has ever solved a task without opening the file
+that states the rule.
 
 The cleanest case is gpt-oss on `inventory-ledger`, the same model and task
 three times over:
