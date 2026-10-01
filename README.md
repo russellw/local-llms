@@ -258,24 +258,27 @@ The ceiling is no longer the problem; the floor might be. Three models score
 zero across five tasks, which orders them not at all -- `tests green`,
 `green but wrong` and `reads the spec` are what separate them, and they are
 diagnostics rather than a score. If the point is to rank models below
-gpt-oss-20b, this suite needs an easier tier more than a harder one.
+gpt-oss-20b, this suite needs an easier tier more than a harder one. The 7% of
+Qwen3.6-35B-A3B is the first row to land between the two groups, and it took a
+model that reads the spec and then ignores what it read to get there.
 
 ## What the runs found
 
-Five models, on the machine described above. `results/REPORT.md` has the full
+Six models, on the machine described above. `results/REPORT.md` has the full
 table; this is the part worth knowing.
 
 | Model | solved | tests green | any | reads the spec | green but wrong | tok/s |
 |---|---|---|---|---|---|---|
 | gpt-oss-20b-MXFP4 | **73%** | 100% | 100% | 87% | 4 | 1.9 |
 | Qwen3.6-27B | **73%** | 100% | 80% | 100% | 4 | 0.6 |
+| Qwen3.6-35B-A3B | **7%** | 80% | 20% | 73% | 11 | 3.4 |
 | Devstral-Small-2507 | **0%** | 60% | 0% | 20% | 3 | 0.6 |
 | Qwen3-Coder-30B-A3B | **0%** | 40% | 0% | 80% | 6 | 1.2 |
 | Qwen2.5-Coder-32B | **0%** | 20% | 0% | 0% | 1 | 0.4 |
 
-gpt-oss-20b, Qwen3-Coder-30B-A3B and Qwen3.6-27B ran three attempts per task,
-Devstral and Qwen2.5-Coder one, because at 0.4 tok/s a single pass is most of a
-day.
+gpt-oss-20b, Qwen3-Coder-30B-A3B, Qwen3.6-27B and Qwen3.6-35B-A3B ran three
+attempts per task, Devstral and Qwen2.5-Coder one, because at 0.4 tok/s a
+single pass is most of a day.
 
 **Two models solve anything at all, and they tie.** Three of the five score
 zero across five tasks, and the column that explains it is `tests green`: every
@@ -298,6 +301,52 @@ Qwen3.6-27B is also the cleanest operator in the table -- spec read on 15 of
 15, no malformed calls, no truncated arguments, no history compaction, no
 refused edits, and a third of its step budget -- and it pays for the same score
 in wall clock, at 0.55 tok/s against 1.9.
+
+### Published benchmarks do not predict this one
+
+Qwen3.6-35B-A3B was added to find out whether the MoE argument above could be
+pushed further: 35B of knowledge for 3B of per-token memory traffic, against
+the 27B's 27B dense. On throughput it wins outright, and by more than the
+arithmetic promised -- **3.4 tok/s against 0.55**, six times its dense sibling
+of the same generation, which is the difference between an eight-hour suite and
+a twenty-hour one.
+
+It scores **7%**.
+
+That is one solved attempt in fifteen, from a model whose published SWE-bench
+Verified (73.4%) sits within four points of the 27B's (77.2%). The two numbers
+disagree because they measure different things, and the column that shows it is
+`green but wrong`: **11 of 15**, near triple either leader's 4. It goes green on
+80% of the suites it can run and is right on almost none of them.
+
+The transcripts say plainly why. On `crash-recovery` it read `SPEC.md`, and at
+step 8 wrote out the spec-only bug itself, unprompted:
+
+> The current code has `if lsn < checkpoint.lsn: continue` which skips records
+> with `lsn < checkpoint.lsn` but not `lsn == checkpoint.lsn`. This should be
+> `lsn <= checkpoint.lsn`. Let me run the tests first...
+
+It ran the tests, saw 13 of 13 green, and called `finish` -- never applying the
+fix it had just diagnosed in writing. One edit, nine of thirty steps, every
+visible test passing, every one of the seven held-out checks failing.
+
+So the failure is not comprehension. It found the rule that nothing pointed it
+towards, stated it correctly, and then let a green suite overrule it. The
+held-out design exists to catch exactly that, and no model here has
+demonstrated it more cleanly: this is what it looks like when a model treats
+the tests it can run as the definition of done.
+
+Its other failure mode is cruder. Three attempts ended `no_call` -- a hundred
+minutes of reasoning apiece, zero edits, no tool call ever emitted. Thinking
+without acting, which at 3.4 tok/s is still an hour and a half of wall clock
+spent reaching nothing.
+
+The practical lesson for picking the next model: **leaderboard position is not
+the signal.** gpt-oss-20b ties the 27B here from well below it on SWE-bench,
+and Qwen3.6-35B-A3B lands near the 27B on SWE-bench and an order of magnitude
+below it here. What the two 73% models share is not a benchmark score but a
+disposition -- they keep working after the visible gradient goes flat, spending
+42% and 33% of their step budgets against the 35B-A3B's 30%.
 
 ### Why that took a rebuild to see
 
