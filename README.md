@@ -82,11 +82,30 @@ Two consequences shape every model choice in this repo:
    but ~3B active, so it carries a 30B model's knowledge at roughly a 3B
    model's speed. On this box that is the difference between unusable and
    usable.
+3. **A model twice the size of RAM still runs, off the disk.** This was added
+   after the fact, because the first two points had been read as ruling it out.
+   llama.cpp mmaps the weights, so a 63 GB MoE on a 30 GB box keeps about half
+   its experts in page cache and faults the rest in per token. gpt-oss-120b
+   does this at 0.4 tok/s against the 20b's 1.9 -- five times slower, and the
+   best score in the table. The disk here measures 320-396 MB/s on large random
+   reads, which is what sets that figure; it is the one number in this section
+   that is about the SSD rather than the RAM.
+
+   Two practical notes. All gpt-oss-120b GGUF quants are ~63 GB whatever the
+   label, because the expert tensors are natively MXFP4 and llama.cpp will not
+   requantise them -- the quant name only touches the small non-expert tensors,
+   so there is no smaller build to reach for. And it will not load at all
+   without `--no-repack`: the AVX2 repacking path wants a real 58 GB
+   allocation, which defeats mmap and dies with
+   `ggml_aligned_malloc: insufficient memory`. Repacking is a weight-layout
+   optimisation, so disabling it costs throughput and changes no output.
 
 An agentic suite is far more sensitive to this than a single-shot one. A task
 here is twenty-odd model turns, each replaying a conversation that grows with
 every file read, so prompt processing stops being a rounding error and starts
-being most of the wall clock.
+being most of the wall clock. On a disk-bound model that cuts both ways: the
+measured prompt rate is 5.1 tok/s against 0.73 for generation on a short cold
+prompt, because a batch amortises the expert reads that a single token cannot.
 
 ## Quick start
 
@@ -249,10 +268,12 @@ nothing but a machine with similar memory bandwidth.
 repo, so they are not in any model's training data today. Nothing stops that
 changing, and the defence is that they are cheap to replace.
 
-**All five tasks are solvable and none is saturated.** gpt-oss-20b has solved
-each of the five at least once against the held-out suite, so a zero is the
-model's rather than the task's. It has also failed four of the fifteen, so no
-task is free.
+**All five tasks are solvable and none is saturated.** gpt-oss-20b and
+gpt-oss-120b have each solved all five at least once against the held-out
+suite, so a zero is the model's rather than the task's. The best row still
+fails two of fifteen, so no task is free -- but at 87% the ceiling is now close
+enough that five tasks cannot resolve what is left, and the next real finding
+here needs more tasks rather than a better model.
 
 The ceiling is no longer the problem; the floor might be. Three models score
 zero across five tasks, which orders them not at all -- `tests green`,
@@ -264,11 +285,12 @@ model that reads the spec and then ignores what it read to get there.
 
 ## What the runs found
 
-Six models, on the machine described above. `results/REPORT.md` has the full
+Seven models, on the machine described above. `results/REPORT.md` has the full
 table; this is the part worth knowing.
 
 | Model | solved | tests green | any | reads the spec | green but wrong | tok/s |
 |---|---|---|---|---|---|---|
+| gpt-oss-120b-MXFP4 | **87%** | 100% | 100% | 93% | 2 | 0.4 |
 | gpt-oss-20b-MXFP4 | **73%** | 100% | 100% | 87% | 4 | 1.9 |
 | Qwen3.6-27B | **73%** | 100% | 80% | 100% | 4 | 0.6 |
 | Qwen3.6-35B-A3B | **7%** | 80% | 20% | 73% | 11 | 3.4 |
@@ -276,9 +298,10 @@ table; this is the part worth knowing.
 | Qwen3-Coder-30B-A3B | **0%** | 40% | 0% | 80% | 6 | 1.2 |
 | Qwen2.5-Coder-32B | **0%** | 20% | 0% | 0% | 1 | 0.4 |
 
-gpt-oss-20b, Qwen3-Coder-30B-A3B, Qwen3.6-27B and Qwen3.6-35B-A3B ran three
-attempts per task, Devstral and Qwen2.5-Coder one, because at 0.4 tok/s a
-single pass is most of a day.
+gpt-oss-120b, gpt-oss-20b, Qwen3-Coder-30B-A3B, Qwen3.6-27B and
+Qwen3.6-35B-A3B ran three attempts per task, Devstral and Qwen2.5-Coder one,
+because at 0.4 tok/s a single pass is most of a day. The gpt-oss-120b row took
+21.1 hours for its fifteen.
 
 **Two models solve anything at all, and they tie.** Three of the five score
 zero across five tasks, and the column that explains it is `tests green`: every
@@ -347,6 +370,46 @@ and Qwen3.6-35B-A3B lands near the 27B on SWE-bench and an order of magnitude
 below it here. What the two 73% models share is not a benchmark score but a
 disposition -- they keep working after the visible gradient goes flat, spending
 42% and 33% of their step budgets against the 35B-A3B's 30%.
+
+### What finally beat 73%
+
+gpt-oss-120b, at **87%** -- 13 of 15, the first row above the tie, and it took
+abandoning the RAM budget to get there. 63 GB of weights on a 30 GB box, mmapped,
+about half the experts resident and the rest faulted off the SSD per token. It
+is the slowest model in the table at 0.4 tok/s and spent 21.1 hours on fifteen
+attempts.
+
+It was picked on the disposition argument rather than a benchmark, and the
+argument held: it is the 20b's own family, six times the total parameters, same
+reasoning style. The improvement shows up exactly where the theory said it
+would -- `green but wrong` falls from 4 to 2, and `any` stays at 100%. It is not
+better at operating the tools (both floor at 100%) and it is not more diligent
+about the spec (93% against 87%). It is better at *not stopping*, which is the
+one thing this suite is built to reward.
+
+Both its failures are the same failure, and the same one that sinks everything
+below it: an attempt that went green on every visible test and lost the held-out
+suite, 5 of 7 checks failing, once on `inventory-ledger` and once on
+`crash-recovery`. Nothing in the table has ever failed any other way at the top
+end. There are no false-dones, no malformed calls, no compactions, no refused
+edits in the whole row.
+
+So the ordering of these seven models is not the ordering of their published
+scores, and it is not the ordering of their active parameters either:
+
+| | total | active | solved | tok/s |
+|---|---|---|---|---|
+| gpt-oss-120b | 117B | 5.1B | **87%** | 0.4 |
+| gpt-oss-20b | 21B | 3.6B | **73%** | 1.9 |
+| Qwen3.6-27B | 27B | 27B | **73%** | 0.6 |
+| Qwen3.6-35B-A3B | 35B | 3B | **7%** | 3.4 |
+
+Total capacity tracks the score; active parameters track only the speed. The
+MoE argument above buys throughput, and throughput is what makes a model usable
+rather than what makes it correct -- Qwen3.6-35B-A3B is nine times faster than
+gpt-oss-120b and solves a twelfth as much. On this hardware the honest trade is
+the opposite of the comfortable one: if the work has to be right, spend the
+wall clock.
 
 ### Why that took a rebuild to see
 
