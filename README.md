@@ -133,6 +133,13 @@ Python 3.11+.
 | `python3 -m bench run --label NAME` | run the suite against the served model |
 | `python3 -m bench report --write` | regenerate `results/REPORT.md` from all runs |
 
+`serve.sh` env overrides: `THREADS`, `CTX`, `PORT`, `BATCH`, `MLOCK`, and
+`REPACK`/`HEADROOM_MB` for the repack decision described under
+[The machine](#the-machine) -- unset it and the size of the file against
+`MemAvailable` decides, which is what lets a 63 GB model load unaided.
+`overnight.sh` takes `REPEATS`, `TOKEN_SCALE`, `TIMEOUT` (28800s, sized for the
+slowest model here rather than the default 1800s) and `LOAD_TIMEOUT`.
+
 Useful `run` flags: `--task <id>` (repeatable) to run a subset, `--repeats N`
 to sample each task N times, `--protocol native|text|auto`, `--fresh` to
 discard prior results, `--max-tokens-scale 3` for a reasoning model that needs

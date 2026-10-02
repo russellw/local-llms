@@ -3,7 +3,7 @@
 #
 #   scripts/serve.sh models/some-model.gguf [extra llama-server args...]
 #
-# Env overrides: THREADS, CTX, PORT, BATCH
+# Env overrides: THREADS, CTX, PORT, BATCH, MLOCK, REPACK, HEADROOM_MB
 set -euo pipefail
 
 MODEL="${1:?usage: serve.sh <model.gguf> [extra args...]}"
@@ -41,6 +41,41 @@ echo
 MLOCK_FLAG=()
 [ "${MLOCK:-0}" = "1" ] && MLOCK_FLAG=(--mlock)
 
+# Weight repacking rearranges quantised tensors into an AVX2-friendly layout.
+# It is a throughput optimisation and changes no output -- but it needs a real
+# allocation the size of the weights, which defeats mmap. A model bigger than
+# RAM therefore cannot repack: it dies on load with
+#   ggml_aligned_malloc: insufficient memory (attempted to allocate 58092 MB)
+# which reads like plain OOM and is not. gpt-oss-120b (63 GB on a 30 GB box)
+# needs this; every model here that fits in RAM keeps repacking, so their
+# recorded tok/s stays comparable.
+#
+# REPACK=1 forces it on, REPACK=0 forces it off, unset decides from the file
+# size against MemAvailable (which counts reclaimable page cache, so a previous
+# model's cached weights do not skew it). HEADROOM_MB covers the KV cache and
+# compute buffers that have to fit alongside.
+REPACK_FLAG=()
+HEADROOM_MB="${HEADROOM_MB:-3072}"
+
+if printf '%s\n' "$@" | grep -qxE -- '--repack|--no-repack|-nr'; then
+    echo "repack  : left to the flag you passed"
+else
+    MODEL_MB=$(( $(stat -c %s "$MODEL") / 1024 / 1024 ))
+    AVAIL_MB=$(( $(awk '/^MemAvailable:/ {print $2}' /proc/meminfo) / 1024 ))
+    case "${REPACK:-auto}" in
+        1) echo "repack  : on (REPACK=1)" ;;
+        0) REPACK_FLAG=(--no-repack); echo "repack  : off (REPACK=0)" ;;
+        *)
+            if [ "$(( MODEL_MB + HEADROOM_MB ))" -gt "$AVAIL_MB" ]; then
+                REPACK_FLAG=(--no-repack)
+                echo "repack  : off -- model ${MODEL_MB} MB + ${HEADROOM_MB} MB headroom > ${AVAIL_MB} MB available; it will mmap off disk"
+            else
+                echo "repack  : on -- model ${MODEL_MB} MB fits in ${AVAIL_MB} MB available"
+            fi
+            ;;
+    esac
+fi
+
 # --jinja uses the chat template embedded in the GGUF rather than a built-in
 # guess. Qwen3 and gpt-oss have templates the legacy path renders wrong, which
 # shows up as a model that looks much dumber than it is.
@@ -56,4 +91,5 @@ exec "$BIN" \
     --gpu-layers 0 \
     --no-webui \
     "${MLOCK_FLAG[@]}" \
+    "${REPACK_FLAG[@]}" \
     "$@"

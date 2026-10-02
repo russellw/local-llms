@@ -20,7 +20,15 @@ PORT="${PORT:-8080}"
 # Generous by default: reasoning models need room to think before they answer,
 # and a cap costs nothing for a model that stops on its own.
 TOKEN_SCALE="${TOKEN_SCALE:-3}"
-LOAD_TIMEOUT="${LOAD_TIMEOUT:-600}"   # seconds to wait for a big model to load
+LOAD_TIMEOUT="${LOAD_TIMEOUT:-1200}"  # seconds to wait for a big model to load
+# Per-request ceiling, and it has to be derived rather than guessed. The largest
+# task budget is 3000 tokens, so TOKEN_SCALE=3 allows 9000 in one response; at
+# the slowest rate measured here (gpt-oss-120b, 0.37 tok/s, mmapped off disk)
+# that is nearly seven hours for a single call. `bench run` defaults to 1800s,
+# which silently killed three attempts of a 35B-A3B run mid-think and scored
+# them as failures. A timeout exists to catch a hung server, not to cap a slow
+# one, so it is set well past the worst legitimate case.
+TIMEOUT="${TIMEOUT:-28800}"
 LOGDIR="$ROOT/results/logs"
 mkdir -p "$LOGDIR"
 
@@ -85,6 +93,7 @@ for MODEL in "$@"; do
         --url "http://127.0.0.1:$PORT" \
         --repeats "$REPEATS" \
         --max-tokens-scale "$TOKEN_SCALE" \
+        --timeout "$TIMEOUT" \
         2>&1 | stdbuf -oL sed 's/^/    /'
 
     stop_server
