@@ -4,6 +4,7 @@
 
 | Model                               | solved | tests green | any | operates tools | reads the spec | green but wrong | false done | steps | tok/s |
 |-------------------------------------|--------|-------------|-----|----------------|----------------|-----------------|------------|-------|-------|
+| Qwen3.8-27B-Q4_K_M                  |   100% |        100% | 100% |           100% |           100% |               0 |          0 |   31% |   0.6 |
 | gpt-oss-120b-MXFP4                  |    87% |        100% | 100% |           100% |            93% |               2 |          0 |   40% |   0.4 |
 | gpt-oss-20b-MXFP4                   |    73% |        100% | 100% |           100% |            87% |               4 |          0 |   42% |   1.9 |
 | Qwen3.6-27B-Q4_K_M                  |    73% |        100% | 80% |           100% |           100% |               4 |          0 |   33% |   0.6 |
@@ -45,6 +46,7 @@ Everything else explains how.
   is a model that knew when it was done; high with a low score is one
   that wandered until it was stopped.
 
+**Qwen3.8-27B-Q4_K_M** (native tool calls) -- 15 call(s) repeated a call already made; 1 edit(s) were refused; 15 attempt(s) over 5 task(s); 2.5 edits and 1.7 test runs per attempt
 **gpt-oss-120b-MXFP4** (native tool calls) -- **2 attempt(s) went green on every test they could run and still failed the held-out suite**; 14 call(s) repeated a call already made; 15 attempt(s) over 5 task(s); 2.7 edits and 1.5 test runs per attempt
 **gpt-oss-20b-MXFP4** (native tool calls) -- **4 attempt(s) went green on every test they could run and still failed the held-out suite**; 19 call(s) repeated a call already made; 1 edit(s) were refused; 15 attempt(s) over 5 task(s); 2.9 edits and 1.9 test runs per attempt
 **Qwen3.6-27B-Q4_K_M** (native tool calls) -- **4 attempt(s) went green on every test they could run and still failed the held-out suite**; 19 call(s) repeated a call already made; 15 attempt(s) over 5 task(s); 2.5 edits and 2.1 test runs per attempt; never solved: inventory-ledger

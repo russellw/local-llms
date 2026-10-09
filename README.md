@@ -86,8 +86,8 @@ Two consequences shape every model choice in this repo:
    after the fact, because the first two points had been read as ruling it out.
    llama.cpp mmaps the weights, so a 63 GB MoE on a 30 GB box keeps about half
    its experts in page cache and faults the rest in per token. gpt-oss-120b
-   does this at 0.4 tok/s against the 20b's 1.9 -- five times slower, and the
-   best score in the table. The disk here measures 320-396 MB/s on large random
+   does this at 0.4 tok/s against the 20b's 1.9 -- five times slower, and at
+   the time the best score in the table. The disk here measures 320-396 MB/s on large random
    reads, which is what sets that figure; it is the one number in this section
    that is about the SSD rather than the RAM.
 
@@ -275,14 +275,14 @@ nothing but a machine with similar memory bandwidth.
 repo, so they are not in any model's training data today. Nothing stops that
 changing, and the defence is that they are cheap to replace.
 
-**All five tasks are solvable and none is saturated.** gpt-oss-20b and
-gpt-oss-120b have each solved all five at least once against the held-out
-suite, so a zero is the model's rather than the task's. The best row still
-fails two of fifteen, so no task is free -- but at 87% the ceiling is now close
-enough that five tasks cannot resolve what is left, and the next real finding
-here needs more tasks rather than a better model.
+**The suite is saturated at the top.** Qwen3.8-27B solves all fifteen
+attempts, so nothing above it can be ranked, and 15 of 15 against
+gpt-oss-120b's 13 of 15 over five correlated tasks is not by itself evidence
+that it is the better of the two. Every task has now been solved against the
+held-out suite by at least three models, so a zero is the model's rather than
+the task's. The next real finding here needs harder tasks, not another model.
 
-The ceiling is no longer the problem; the floor might be. Three models score
+The floor is the other problem. Three models score
 zero across five tasks, which orders them not at all -- `tests green`,
 `green but wrong` and `reads the spec` are what separate them, and they are
 diagnostics rather than a score. If the point is to rank models below
@@ -292,11 +292,12 @@ model that reads the spec and then ignores what it read to get there.
 
 ## What the runs found
 
-Seven models, on the machine described above. `results/REPORT.md` has the full
+Eight models, on the machine described above. `results/REPORT.md` has the full
 table; this is the part worth knowing.
 
 | Model | solved | tests green | any | reads the spec | green but wrong | tok/s |
 |---|---|---|---|---|---|---|
+| Qwen3.8-27B | **100%** | 100% | 100% | 100% | 0 | 0.6 |
 | gpt-oss-120b-MXFP4 | **87%** | 100% | 100% | 93% | 2 | 0.4 |
 | gpt-oss-20b-MXFP4 | **73%** | 100% | 100% | 87% | 4 | 1.9 |
 | Qwen3.6-27B | **73%** | 100% | 80% | 100% | 4 | 0.6 |
@@ -305,10 +306,10 @@ table; this is the part worth knowing.
 | Qwen3-Coder-30B-A3B | **0%** | 40% | 0% | 80% | 6 | 1.2 |
 | Qwen2.5-Coder-32B | **0%** | 20% | 0% | 0% | 1 | 0.4 |
 
-gpt-oss-120b, gpt-oss-20b, Qwen3-Coder-30B-A3B, Qwen3.6-27B and
+Qwen3.8-27B, gpt-oss-120b, gpt-oss-20b, Qwen3-Coder-30B-A3B, Qwen3.6-27B and
 Qwen3.6-35B-A3B ran three attempts per task, Devstral and Qwen2.5-Coder one,
 because at 0.4 tok/s a single pass is most of a day. The gpt-oss-120b row took
-21.1 hours for its fifteen.
+21.1 hours for its fifteen, and the Qwen3.8-27B row 31.0.
 
 **Two models solve anything at all, and they tie.** Three of the five score
 zero across five tasks, and the column that explains it is `tests green`: every
@@ -411,12 +412,43 @@ scores, and it is not the ordering of their active parameters either:
 | Qwen3.6-27B | 27B | 27B | **73%** | 0.6 |
 | Qwen3.6-35B-A3B | 35B | 3B | **7%** | 3.4 |
 
-Total capacity tracks the score; active parameters track only the speed. The
+Total capacity tracks the score; active parameters track only the speed.
+(Qwen3.8-27B, below, broke the first half of that within a week.) The
 MoE argument above buys throughput, and throughput is what makes a model usable
 rather than what makes it correct -- Qwen3.6-35B-A3B is nine times faster than
 gpt-oss-120b and solves a twelfth as much. On this hardware the honest trade is
 the opposite of the comfortable one: if the work has to be right, spend the
 wall clock.
+
+### And then 100%
+
+Qwen3.8-27B, at **100%** -- 15 of 15, the first perfect row, from a 27B dense
+model that is a quarter of gpt-oss-120b's total parameters and fits in RAM with
+room to spare. It was added because it was what public discussion of local
+coding agents had moved on to, two months after its weights came out on
+2026-08-14; the tasks here were written on 2026-09-20, after that, so it cannot
+have seen them.
+
+It is the same size and speed as Qwen3.6-27B -- 0.6 tok/s, 31.0 hours for the
+fifteen -- and on the same settings it fixes exactly what the previous
+generation could not. Qwen3.6-27B failed `inventory-ledger` 0 for 3 after
+opening the README every time; Qwen3.8-27B solves it 3 for 3, and on attempt 1
+reads the README, writes out all four bugs including the one only the README
+states (round once, half to even), fixes them in two edits, runs the tests
+once and finishes at step 8 of 26.
+
+The rest of the row is the cleanest in the table. Spec read on 15 of 15, no
+`green but wrong`, no false-dones, malformed calls, truncated arguments or
+compactions, one refused edit, 1.7 test runs per attempt and 31% of the step
+budget. Every attempt calls `finish` within two steps of going green. That cuts
+against the disposition argument above: it stops as soon as the visible suite
+passes and is right anyway, because it had the spec-only rules right before it
+ran anything.
+
+So the capacity argument does not survive it. A 27B dense model beats a 117B
+MoE, and the clearest thing the table says now is that a newer generation at
+the same size beats both. It also ends this suite's ability to rank the top:
+see [What this does not measure](#what-this-does-not-measure).
 
 ### Why that took a rebuild to see
 
@@ -446,10 +478,10 @@ well-formed, verified answer to a question nobody asked, every single time.
 
 | | solved |
 |---|---|
-| opened the spec file | 23 of 41 (56%) |
-| did not | **0 of 14 (0%)** |
+| opened the spec file | 52 of 81 (64%) |
+| did not | **0 of 19 (0%)** |
 
-Across all 55 attempts, nothing has ever solved a task without opening the file
+Across all 100 attempts, nothing has ever solved a task without opening the file
 that states the rule.
 
 The cleanest case is gpt-oss on `inventory-ledger`, the same model and task
