@@ -170,7 +170,7 @@ task, the workspace or the scorer. It checks three things:
 
 ## The tasks
 
-Six, all deliberately hard. A task that a 7B solves on the first try tells you
+Seven, all deliberately hard. A task that a 7B solves on the first try tells you
 nothing you did not already know.
 
 | Task | The work | The trap |
@@ -181,6 +181,7 @@ nothing you did not already know.
 | `retry-policy` | backoff, jitter, throttling and an elapsed budget | fixing the arithmetic while the classifier still calls `429` fatal, so the throttling branch is never reached |
 | `crash-recovery` | rebuilding a store from a checkpoint and a damaged journal | skipping a corrupt record and carrying on, where the spec says replay stops there and discards everything after |
 | `incremental-build` | an incremental build tool with content fingerprints and a store that outlives a build | rebuilding everything downstream of a target that ran, where the design says a dependency that came out byte-for-byte the same leaves its dependents up to date |
+| `durable-store` | a key-value store on a filesystem that can lose power, where a commit must be all-or-nothing and touch only the keys it changes | fsyncing each file and then the directory, which survives a clean power loss and still leaves some keys old and some new when the power fails mid-commit |
 
 `crash-recovery` is the hardest and was added because gpt-oss-20b solved the
 other four outright. Its three bugs are spread over three files and none of
@@ -223,6 +224,33 @@ model that reads the whole spec and complies with it; the next task has to be
 one where reading is not enough -- a project too large to read whole, or rules
 whose consequences have to be reasoned out rather than transcribed.
 
+`durable-store` is the second kind. Its design states three requirements: a
+commit is all-or-nothing whenever the power goes, it is permanent once it
+returns, and it writes data only for the keys it changes.
+`src/fs.py` states exactly what survives a power loss -- contents as of the
+last `fsync`, the directory as of the last `fsync_dir`, and of the directory
+changes since, any prefix. Nothing says how to meet the requirements under
+those rules. That has to be worked out: write each new value under a new name
+and fsync it, write a manifest naming them to a temporary file and fsync it,
+rename it into place, `fsync_dir` before returning, and remove the old files
+only after that. Writing the rules down gives the model the destination and
+none of the route. The model cannot run code of its own either -- its tools
+run only the suite -- so it cannot find the order by trial against the
+filesystem; it has to reason about it.
+
+The visible suite checks ordinary use and one clean power loss after a commit
+returns; four bugs show there (a missing key raises, a delete leaves its file,
+a key with `/` in it is an illegal file name, and nothing is ever made to
+survive). The held-out suite cuts the power at every change of a commit,
+opens every outcome the filesystem allows, and requires the old contents or
+the new. The wrong answers it was checked against: the fix the visible
+failures suggest -- fsync every file, `fsync_dir` at the end -- is green on
+all 11 visible checks and leaves `{a=2, b=1}` behind; the textbook single file
+with temp, fsync and rename passes every power cut and writes 50 KB to change
+one key in fifty; and the right design with any one step missing or out of
+order -- no fsync of the data, old files removed before the rename, no
+`fsync_dir` before returning, the manifest written in place -- fails.
+
 Each has several interacting bugs rather than one, because a single planted bug
 rewards pattern-matching and a spec clause nobody mentioned rewards reading.
 Each carries a requirement that **cannot be inferred from the code** -- stated
@@ -259,7 +287,7 @@ has nothing to work from and stops at once. `acceptance/` must hold the rules
 that only the spec states, so that a fix arrived at by watching the visible
 tests go green is not enough. The test worth running by hand: build the
 reference, put the spec-only rules back to their broken state, and check that
-the visible suite goes green while the held-out one does not. All six tasks
+the visible suite goes green while the held-out one does not. All seven tasks
 here satisfy that, and `crash-recovery` needed a mechanical bug added
 afterwards because all three of its original bugs were spec-only -- its visible
 suite passed as shipped, which would have made it unplayable.
@@ -285,7 +313,7 @@ Then run `python3 -m bench selfcheck`.
 
 Stated plainly, because these are deliberate boundaries rather than oversights:
 
-**Six tasks is a small sample.** It resolves large differences between models
+**Seven tasks is a small sample.** It resolves large differences between models
 and nothing finer. Attempts at the same task are correlated, so the effective
 sample size is closer to the number of *tasks* than the number of attempts.
 
