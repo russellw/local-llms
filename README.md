@@ -211,6 +211,18 @@ but implements it as a depth-first walk still fails: the design gives a worked
 example, `a` needs `c`, then `b`, then `c`, whose order is `b`, `c`, `a`, and a
 depth-first walk gives `c`, `a`, `b`.
 
+It did not work. Qwen3.8-27B solves it 3 for 3, at 14-15 of 34 steps and about
+5.2 hours an attempt, and the transcripts show why none of the above mattered.
+It reads the README, the design and all five source files, runs the tests once,
+and then -- before a single edit -- writes out every rule the design states,
+including all five the visible suite never checks. Four edits rewrite `build`
+and `order` against the design, one more test run is green, and it finishes.
+The visible failures never drove a fix, so the patches that satisfy them and
+are wrong never came up. Hiding a rule in plain prose does nothing against a
+model that reads the whole spec and complies with it; the next task has to be
+one where reading is not enough -- a project too large to read whole, or rules
+whose consequences have to be reasoned out rather than transcribed.
+
 Each has several interacting bugs rather than one, because a single planted bug
 rewards pattern-matching and a spec clause nobody mentioned rewards reading.
 Each carries a requirement that **cannot be inferred from the code** -- stated
@@ -299,10 +311,11 @@ changing, and the defence is that they are cheap to replace.
 **The suite is saturated at the top.** Qwen3.8-27B solves all fifteen
 attempts, so nothing above it can be ranked, and 15 of 15 against
 gpt-oss-120b's 13 of 15 over five correlated tasks is not by itself evidence
-that it is the better of the two. Every task has now been solved against the
-held-out suite by at least three models, so a zero is the model's rather than
-the task's. The next real finding here needs harder tasks, not another model;
-`incremental-build` is the first of them, and the rows above predate it.
+that it is the better of the two. Each of the original five has been solved against
+the held-out suite by at least three models, so a zero there is the model's
+rather than the task's. The next real finding here needs harder tasks, not
+another model. `incremental-build` was the first attempt at one, and
+Qwen3.8-27B solved it 3 for 3 as well (see [The tasks](#the-tasks)).
 
 The floor is the other problem. Three models score
 zero across five tasks, which orders them not at all -- `tests green`,
@@ -319,7 +332,7 @@ table; this is the part worth knowing.
 
 | Model | solved | tests green | any | reads the spec | green but wrong | tok/s |
 |---|---|---|---|---|---|---|
-| Qwen3.8-27B | **100%** | 100% | 100% | 100% | 0 | 0.6 |
+| Qwen3.8-27B* | **100%** | 100% | 100% | 100% | 0 | 0.6 |
 | gpt-oss-120b-MXFP4 | **87%** | 100% | 100% | 93% | 2 | 0.4 |
 | gpt-oss-20b-MXFP4 | **73%** | 100% | 100% | 87% | 4 | 1.9 |
 | Qwen3.6-27B | **73%** | 100% | 80% | 100% | 4 | 0.6 |
@@ -332,6 +345,12 @@ Qwen3.8-27B, gpt-oss-120b, gpt-oss-20b, Qwen3-Coder-30B-A3B, Qwen3.6-27B and
 Qwen3.6-35B-A3B ran three attempts per task, Devstral and Qwen2.5-Coder one,
 because at 0.4 tok/s a single pass is most of a day. The gpt-oss-120b row took
 21.1 hours for its fifteen, and the Qwen3.8-27B row 31.0.
+
+\* The Qwen3.8-27B row covers six tasks, 18 attempts, because it is the only
+model so far run on `incremental-build`; every other row covers the original
+five. Its 100% is 15 of 15 on those five and 3 of 3 on the sixth, so it holds
+on either basis, but the rows are not on the same sample until the others are
+run on the sixth task too.
 
 **Two models solve anything at all, and they tie.** Three of the five score
 zero across five tasks, and the column that explains it is `tests green`: every
