@@ -170,7 +170,7 @@ task, the workspace or the scorer. It checks three things:
 
 ## The tasks
 
-Five, all deliberately hard. A task that a 7B solves on the first try tells you
+Six, all deliberately hard. A task that a 7B solves on the first try tells you
 nothing you did not already know.
 
 | Task | The work | The trap |
@@ -180,6 +180,7 @@ nothing you did not already know.
 | `log-compactor` | one-pass compaction of a record stream | fixing the logic and leaving the per-record scan, so it stays quadratic and the suite times out |
 | `retry-policy` | backoff, jitter, throttling and an elapsed budget | fixing the arithmetic while the classifier still calls `429` fatal, so the throttling branch is never reached |
 | `crash-recovery` | rebuilding a store from a checkpoint and a damaged journal | skipping a corrupt record and carrying on, where the spec says replay stops there and discards everything after |
+| `incremental-build` | an incremental build tool with content fingerprints and a store that outlives a build | rebuilding everything downstream of a target that ran, where the design says a dependency that came out byte-for-byte the same leaves its dependents up to date |
 
 `crash-recovery` is the hardest and was added because gpt-oss-20b solved the
 other four outright. Its three bugs are spread over three files and none of
@@ -189,6 +190,26 @@ sequence number, recovery aliases the checkpoint's state instead of copying it
 rather than stopping the replay. Fixing everything visible in the code gets to
 **18 of 20** and still fails -- the last two need the rule that exists only in
 `SPEC.md`.
+
+`incremental-build` was added because Qwen3.8-27B solved the other five 15 for
+15, and it is built against what that model's transcripts show it does: it
+reads every file at step 2, and every other spec here announces its own trap
+("This is the part that is easy to get wrong", in bold). This one is bigger --
+five source files and a design doc in `docs/` -- and the design states its
+rules in even, unemphasised prose, none of them flagged. Five bugs show in the
+visible suite (fingerprints computed before the build, so a second build reruns
+things; a recipe version that is never hashed; a goal that pulls in only its
+direct dependencies; a failure that leaves nothing reported as blocked; a
+missing dependency that crashes rather than raising `BuildError`), and the
+obvious patch for most of them is the wrong one. The checked case: fixing only
+what the visible suite reports turns all 13 of its checks green and fails 6 of
+the 7 held-out checks, covering all five rules that only the design states --
+declaration order rather than alphabetical, early cutoff when a dependency rebuilds to the same bytes,
+dependency order kept out of the fingerprint, carrying on past a failure,
+validating before any recipe runs. A model that does read "declaration order"
+but implements it as a depth-first walk still fails: the design gives a worked
+example, `a` needs `c`, then `b`, then `c`, whose order is `b`, `c`, `a`, and a
+depth-first walk gives `c`, `a`, `b`.
 
 Each has several interacting bugs rather than one, because a single planted bug
 rewards pattern-matching and a spec clause nobody mentioned rewards reading.
@@ -226,7 +247,7 @@ has nothing to work from and stops at once. `acceptance/` must hold the rules
 that only the spec states, so that a fix arrived at by watching the visible
 tests go green is not enough. The test worth running by hand: build the
 reference, put the spec-only rules back to their broken state, and check that
-the visible suite goes green while the held-out one does not. All five tasks
+the visible suite goes green while the held-out one does not. All six tasks
 here satisfy that, and `crash-recovery` needed a mechanical bug added
 afterwards because all three of its original bugs were spec-only -- its visible
 suite passed as shipped, which would have made it unplayable.
@@ -252,7 +273,7 @@ Then run `python3 -m bench selfcheck`.
 
 Stated plainly, because these are deliberate boundaries rather than oversights:
 
-**Five tasks is a small sample.** It resolves large differences between models
+**Six tasks is a small sample.** It resolves large differences between models
 and nothing finer. Attempts at the same task are correlated, so the effective
 sample size is closer to the number of *tasks* than the number of attempts.
 
@@ -280,7 +301,8 @@ attempts, so nothing above it can be ranked, and 15 of 15 against
 gpt-oss-120b's 13 of 15 over five correlated tasks is not by itself evidence
 that it is the better of the two. Every task has now been solved against the
 held-out suite by at least three models, so a zero is the model's rather than
-the task's. The next real finding here needs harder tasks, not another model.
+the task's. The next real finding here needs harder tasks, not another model;
+`incremental-build` is the first of them, and the rows above predate it.
 
 The floor is the other problem. Three models score
 zero across five tasks, which orders them not at all -- `tests green`,

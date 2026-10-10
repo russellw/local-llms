@@ -1,0 +1,10 @@
+{
+  "title": "Incremental build with content fingerprints",
+  "brief": "The incremental build tool in this project does not pass its test suite. Find out why and fix it. You can run the tests whenever you like; you cannot read them.",
+  "budget": 34,
+  "difficulty": "hard",
+  "test_timeout": 60,
+  "max_tokens": 3000,
+  "spec_file": "docs/design.md",
+  "trap": "rebuilding everything downstream of a target that ran, where the design says a dependency that came out byte-for-byte the same leaves its dependents up to date"
+}
