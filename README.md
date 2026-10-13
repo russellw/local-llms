@@ -251,6 +251,25 @@ one key in fifty; and the right design with any one step missing or out of
 order -- no fsync of the data, old files removed before the rename, no
 `fsync_dir` before returning, the manifest written in place -- fails.
 
+Qwen3.8-27B solves it 1 for 3, and not in the way the task was built to
+expect: none of the near-misses above came up. On all three attempts it reads
+the README, the design and `fs.py`, runs the tests once and names the four
+visible bugs. Then it reasons about atomicity before editing. On attempts 0
+and 1 that reasoning never ends. Each turn is capped at 9,000 tokens, and
+both attempts spend turn after turn re-deriving a commit protocol and
+checking whether it might break the seven tests that already pass, until a
+turn runs out mid-sentence without a tool call. That ends the attempt with
+no file ever written, after 16.7 and 26.2 hours. Attempt 2 got as far as
+writing: a manifest written to `manifest.tmp`, fsynced and renamed into
+place, and `/` escaped in file names. It rewrote `layout.py` and `store.py`
+in two whole-file writes, went 11 of 11 on its first test run, and passed all
+six held-out checks -- every power cut, and the byte bound. It then started a
+review instead of calling `finish`, overflowed the 32k context and ended on a
+server error. The score is taken from the project left behind, so it counts.
+The one time it reached the keyboard, it had the order right; what failed
+twice was deliberating within a turn's budget, not reasoning about fsync.
+The three attempts took 63.7 hours between them.
+
 Each has several interacting bugs rather than one, because a single planted bug
 rewards pattern-matching and a spec clause nobody mentioned rewards reading.
 Each carries a requirement that **cannot be inferred from the code** -- stated
@@ -343,7 +362,9 @@ that it is the better of the two. Each of the original five has been solved agai
 the held-out suite by at least three models, so a zero there is the model's
 rather than the task's. The next real finding here needs harder tasks, not
 another model. `incremental-build` was the first attempt at one, and
-Qwen3.8-27B solved it 3 for 3 as well (see [The tasks](#the-tasks)).
+Qwen3.8-27B solved it 3 for 3 as well. `durable-store` is the first to take
+attempts off it, 1 for 3, though mostly for a reason other than the one it was
+built for (see [The tasks](#the-tasks)).
 
 The floor is the other problem. Three models score
 zero across five tasks, which orders them not at all -- `tests green`,
@@ -360,7 +381,7 @@ table; this is the part worth knowing.
 
 | Model | solved | tests green | any | reads the spec | green but wrong | tok/s |
 |---|---|---|---|---|---|---|
-| Qwen3.8-27B* | **100%** | 100% | 100% | 100% | 0 | 0.6 |
+| Qwen3.8-27B* | **90%** | 90% | 100% | 100% | 0 | 0.6 |
 | gpt-oss-120b-MXFP4 | **87%** | 100% | 100% | 93% | 2 | 0.4 |
 | gpt-oss-20b-MXFP4 | **73%** | 100% | 100% | 87% | 4 | 1.9 |
 | Qwen3.6-27B | **73%** | 100% | 80% | 100% | 4 | 0.6 |
@@ -372,13 +393,15 @@ table; this is the part worth knowing.
 Qwen3.8-27B, gpt-oss-120b, gpt-oss-20b, Qwen3-Coder-30B-A3B, Qwen3.6-27B and
 Qwen3.6-35B-A3B ran three attempts per task, Devstral and Qwen2.5-Coder one,
 because at 0.4 tok/s a single pass is most of a day. The gpt-oss-120b row took
-21.1 hours for its fifteen, and the Qwen3.8-27B row 31.0.
+21.1 hours for its fifteen, and the Qwen3.8-27B row 31.0 for the same fifteen
+(110.4 with the two new tasks).
 
-\* The Qwen3.8-27B row covers six tasks, 18 attempts, because it is the only
-model so far run on `incremental-build`; every other row covers the original
-five. Its 100% is 15 of 15 on those five and 3 of 3 on the sixth, so it holds
-on either basis, but the rows are not on the same sample until the others are
-run on the sixth task too.
+\* The Qwen3.8-27B row covers seven tasks, 21 attempts, because it is the only
+model so far run on `incremental-build` and `durable-store`; every other row
+covers the original five. Its 90% is 15 of 15 on those five, 3 of 3 on
+`incremental-build` and 1 of 3 on `durable-store`. On the original five it is
+still 100%, so it leads on either basis, but the rows are not on the same
+sample until the others are run on the two new tasks too.
 
 **Two models solve anything at all, and they tie.** Three of the five score
 zero across five tasks, and the column that explains it is `tests green`: every
@@ -491,9 +514,9 @@ wall clock.
 
 ### And then 100%
 
-Qwen3.8-27B, at **100%** -- 15 of 15, the first perfect row, from a 27B dense
-model that is a quarter of gpt-oss-120b's total parameters and fits in RAM with
-room to spare. It was added because it was what public discussion of local
+Qwen3.8-27B, at **100%** on the original five -- 15 of 15, the first perfect
+row, from a 27B dense model that is a quarter of gpt-oss-120b's total
+parameters and fits in RAM with room to spare. It was added because it was what public discussion of local
 coding agents had moved on to, two months after its weights came out on
 2026-08-14; the tasks here were written on 2026-09-20, after that, so it cannot
 have seen them.
