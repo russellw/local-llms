@@ -22,13 +22,13 @@ PORT="${PORT:-8080}"
 TOKEN_SCALE="${TOKEN_SCALE:-3}"
 LOAD_TIMEOUT="${LOAD_TIMEOUT:-1200}"  # seconds to wait for a big model to load
 # Per-request ceiling, and it has to be derived rather than guessed. The largest
-# task budget is 3000 tokens, so TOKEN_SCALE=3 allows 9000 in one response; at
-# the slowest rate measured here (gpt-oss-120b, 0.37 tok/s, mmapped off disk)
-# that is nearly seven hours for a single call. `bench run` defaults to 1800s,
+# task budget is 6000 tokens (durable-store), so TOKEN_SCALE=3 allows 18000 in
+# one response; at the slowest rate measured here (gpt-oss-120b, 0.37 tok/s,
+# mmapped off disk) that is 13.5 hours for a single call. `bench run` defaults to 1800s,
 # which silently killed three attempts of a 35B-A3B run mid-think and scored
 # them as failures. A timeout exists to catch a hung server, not to cap a slow
 # one, so it is set well past the worst legitimate case.
-TIMEOUT="${TIMEOUT:-28800}"
+TIMEOUT="${TIMEOUT:-64800}"
 LOGDIR="$ROOT/results/logs"
 mkdir -p "$LOGDIR"
 

@@ -45,15 +45,32 @@ MAX_CALLS_PER_STEP = 2
 # prefix is gone -- so compaction pays for itself only by being infrequent and
 # aggressive: cutting to a short history makes that re-processing cheap and
 # buys back several turns of fast generation.
+#
+# Two things keep it rare for a reasoning model, whose single turn can carry
+# 7,000 tokens of thinking. The kept turns lose their reasoning, all but the
+# latest, so the cut really is short. And the next compaction waits for the
+# history to grow by another COMPACT_AT_TOKENS beyond what was kept, not for it
+# to cross a fixed line it may already be over. Without both, the kept tail
+# alone sat above the threshold, every turn compacted again with a new note,
+# and the server re-processed a 24k-token prompt from the top on every turn
+# (Qwen3.8-27B on durable-store: ten turns in nineteen hours, f_keep 0.088).
 COMPACT_AT_TOKENS = 7000
 KEEP_RECENT = 6
 
 
 def _est_tokens(messages: list[dict]) -> int:
-    """Rough size of the conversation. Four chars a token is close enough."""
+    """Rough size of the conversation. Four chars a token is close enough.
+
+    The reasoning counts too. An assistant message goes back to the server
+    intact, `reasoning_content` and all, and the chat template re-renders it;
+    leaving it out of the estimate let a reasoning model's history grow past
+    the context without ever compacting (Qwen3.8-27B on durable-store: three
+    attempts, no compactions, one ended on a 32,806-token request).
+    """
     n = 0
     for m in messages:
         n += len(m.get("content") or "") // 4
+        n += len(m.get("reasoning_content") or "") // 4
         for tc in m.get("tool_calls") or []:
             n += len(json.dumps(tc.get("function") or {}, default=str)) // 4
         n += 4  # role and framing
@@ -96,6 +113,13 @@ def _compact(messages: list[dict]) -> list[dict]:
     if cut is None or cut == 0:
         return messages
 
+    kept = tail[cut:]
+    last = max(i for i, m in enumerate(kept) if m.get("role") == "assistant")
+    kept = [
+        {k: v for k, v in m.items() if k != "reasoning_content"} if i != last else m
+        for i, m in enumerate(kept)
+    ]
+
     did = [d for d in (_describe_call(m) for m in tail[:cut]) if d]
     note = (
         "[Earlier steps have been summarised to save room. What you did so "
@@ -104,7 +128,22 @@ def _compact(messages: list[dict]) -> list[dict]:
         + ". The full text of those results is no longer shown -- re-read any "
         "file you still need.]"
     )
-    return head + [{"role": "user", "content": note}] + tail[cut:]
+    return head + [{"role": "user", "content": note}] + kept
+
+
+def _maybe_compact(messages: list[dict], compact_at: int) -> tuple[list[dict], int, bool]:
+    """Compact if the history has outgrown `compact_at`.
+
+    Returns the messages, the size at which to compact next, and whether it
+    compacted. The next threshold is measured from what was kept, so a kept
+    tail that is itself over COMPACT_AT_TOKENS does not compact again next turn.
+    """
+    if _est_tokens(messages) <= compact_at:
+        return messages, compact_at, False
+    shorter = _compact(messages)
+    if len(shorter) >= len(messages):
+        return messages, compact_at, False
+    return shorter, _est_tokens(shorter) + COMPACT_AT_TOKENS, True
 
 _NUDGE = (
     "That was not a tool call. Reply with a tool call and nothing else, using "
@@ -267,15 +306,14 @@ def run_task(
     consecutive_errors = 0
     t0 = time.monotonic()
     max_tokens = int(task.max_tokens * max_tokens_scale)
+    compact_at = COMPACT_AT_TOKENS
 
     try:
         for step in range(1, task.budget + 1):
             res.steps = step
-            if _est_tokens(messages) > COMPACT_AT_TOKENS:
-                shorter = _compact(messages)
-                if len(shorter) < len(messages):
-                    messages = shorter
-                    res.compactions += 1
+            messages, compact_at, compacted = _maybe_compact(messages, compact_at)
+            if compacted:
+                res.compactions += 1
             comp = client.complete(
                 messages,
                 temperature=temperature,

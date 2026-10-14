@@ -270,6 +270,36 @@ The one time it reached the keyboard, it had the order right; what failed
 twice was deliberating within a turn's budget, not reasoning about fsync.
 The three attempts took 63.7 hours between them.
 
+**That result is withdrawn and the re-run is unfinished.** Two things changed
+after it, so the 1 for 3 no longer measures the task as it stands:
+
+- `max_tokens` for `durable-store` went from 3000 to 6000 (18,000 a turn at
+  the overnight scale of 3), because a turn cap is what ended attempts 0 and 1.
+  The overnight `TIMEOUT` went to 64800 s to match.
+- The loop counts `reasoning_content` when sizing the history, which it did
+  not before -- attempt 2 overflowed 32k without ever compacting. Counting it
+  exposed a second fault: the turns compaction keeps were themselves over the
+  threshold, so it compacted on every turn and the server re-processed the
+  whole prompt each time. Compaction now strips reasoning from all but the
+  latest kept turn and waits for another `COMPACT_AT_TOKENS` of growth before
+  firing again (`bench/agentic/loop.py`, checked by `selfcheck`).
+
+The first re-run, begun 2026-10-13 with the cap raised but before the
+compaction fix, was stopped after nineteen hours on turn 10 of attempt 0 and
+recorded nothing but its header line. The old rows and transcripts were taken
+out of `results/` so the runner would attempt the task again; they are in
+commit `151a421`. To restart (the other six tasks are skipped as done):
+
+```bash
+REPEATS=3 CTX=65536 scripts/overnight.sh models/Qwen3.8-27B-Q4_K_M.gguf \
+    > results/logs/Qwen3.8-27B-Q4_K_M.durable.overnight.log 2>&1
+```
+
+Under the old cap an attempt took 17 to 26 hours, so expect several days for
+three. Progress shows in `results/logs/Qwen3.8-27B-Q4_K_M.server.log` rather
+than the overnight log, which is buffered. Until it finishes, the Qwen3.8-27B
+figures below and in `results/REPORT.md` include the withdrawn 1 for 3.
+
 Each has several interacting bugs rather than one, because a single planted bug
 rewards pattern-matching and a spec clause nobody mentioned rewards reading.
 Each carries a requirement that **cannot be inferred from the code** -- stated
@@ -399,8 +429,9 @@ because at 0.4 tok/s a single pass is most of a day. The gpt-oss-120b row took
 \* The Qwen3.8-27B row covers seven tasks, 21 attempts, because it is the only
 model so far run on `incremental-build` and `durable-store`; every other row
 covers the original five. Its 90% is 15 of 15 on those five, 3 of 3 on
-`incremental-build` and 1 of 3 on `durable-store`. On the original five it is
-still 100%, so it leads on either basis, but the rows are not on the same
+`incremental-build` and 1 of 3 on `durable-store`, the last withdrawn and
+being re-run under changed settings (see [The tasks](#the-tasks)). On the
+original five it is still 100%, so it leads on either basis, but the rows are not on the same
 sample until the others are run on the two new tasks too.
 
 **Two models solve anything at all, and they tie.** Three of the five score

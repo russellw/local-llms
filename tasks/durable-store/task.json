@@ -4,7 +4,7 @@
   "budget": 36,
   "difficulty": "hard",
   "test_timeout": 60,
-  "max_tokens": 3000,
+  "max_tokens": 6000,
   "spec_file": "docs/design.md",
   "trap": "fsyncing each file and the directory at the end, which survives a clean power loss and still leaves some keys old and some new when the power fails mid-commit"
 }

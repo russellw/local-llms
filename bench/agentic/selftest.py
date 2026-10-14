@@ -310,7 +310,7 @@ def run() -> list[str]:
     # History compaction must shrink the conversation without orphaning a tool
     # reply from the call it answers -- that would make the next request
     # malformed and end the attempt on a server error.
-    from .loop import _compact, _est_tokens
+    from .loop import COMPACT_AT_TOKENS, _compact, _est_tokens, _maybe_compact
 
     conv = [{"role": "system", "content": "s"}, {"role": "user", "content": "b"}]
     for i in range(12):
@@ -341,6 +341,37 @@ def run() -> list[str]:
             "compaction: resumed on a "
             f"{packed[3].get('role')!r} turn instead of an assistant turn"
         )
+    thinking = [{"role": "assistant", "content": "", "reasoning_content": "X" * 4000}]
+    if _est_tokens(thinking) < 1000:
+        fails.append("compaction: the size estimate ignores reasoning_content")
+    # A reasoning model's turns are each nearly a threshold's worth. The kept
+    # turns must shed their reasoning, bar the latest, and the history must not
+    # compact again on the very next turn: each compaction writes a new note
+    # near the top and costs a re-processing of everything after it.
+    deep = [{"role": "system", "content": "s"}, {"role": "user", "content": "b"}]
+    for i in range(6):
+        deep.append({
+            "role": "assistant", "content": "", "reasoning_content": "R" * 24000,
+            "tool_calls": [{"id": f"d{i}", "type": "function",
+                            "function": {"name": "read_file",
+                                         "arguments": json.dumps({"path": f"f{i}.py"})}}],
+        })
+        deep.append({"role": "tool", "tool_call_id": f"d{i}", "content": "X" * 400})
+    packed, compact_at, did = _maybe_compact(deep, COMPACT_AT_TOKENS)
+    if not did:
+        fails.append("compaction: a history full of reasoning was not compacted")
+    thought = [m for m in packed if m.get("reasoning_content")]
+    if len(thought) != 1 or thought[0] is not packed[-2]:
+        fails.append("compaction: kept reasoning other than the latest turn's")
+    packed.append({
+        "role": "assistant", "content": "", "reasoning_content": "R" * 4000,
+        "tool_calls": [{"id": "d6", "type": "function",
+                        "function": {"name": "run_tests", "arguments": "{}"}}],
+    })
+    packed.append({"role": "tool", "tool_call_id": "d6", "content": "ok"})
+    if _maybe_compact(packed, compact_at)[2]:
+        fails.append("compaction: compacted again on the very next turn")
+
     short = conv[:5]
     if len(_compact(short)) != len(short):
         fails.append("compaction: rewrote a conversation that was already short")
